@@ -6,14 +6,16 @@ import {
   DialogActions,
   Button,
   TextField,
-  FormControlLabel,
-  Checkbox,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
   Box,
   IconButton,
   Typography,
 } from '@mui/material';
+import type { SelectChangeEvent } from '@mui/material/Select';
 import CloseIcon from '@mui/icons-material/Close';
-import { format } from 'date-fns';
 
 interface AssetFormProps {
   open: boolean;
@@ -35,34 +37,58 @@ const AssetForm: React.FC<AssetFormProps> = ({ open, onClose, onSave, asset }) =
     return parseFloat(value.replace(/\./g, '').replace(',', '.')) || 0;
   };
 
+  interface FormData {
+    name: string;
+    current_value: string;
+    company: string;
+    expiryDate: string;
+    category: 'RENDA_FIXA_POS' | 'RENDA_FIXA_PRE' | 'RENDA_FIXA_IPCA' | 'ACOES' | 'CRIPTOMOEDAS' | 'IMOVEIS' | 'CARROS';
+    initial_value: string;
+    interest_rate: string;
+  }
+
+  // Define a type for the category
+  type CategoryType = 'RENDA_FIXA_POS' | 'RENDA_FIXA_PRE' | 'RENDA_FIXA_IPCA' | 'ACOES' | 'CRIPTOMOEDAS' | 'IMOVEIS' | 'CARROS';
+
   const [formData, setFormData] = useState({
     name: '',
     current_value: '',
     company: '',
     expiryDate: '',
-    is_variable_income: false,
+    category: 'RENDA_FIXA_POS' as CategoryType,
     initial_value: '',
     interest_rate: '',
   });
 
+  const CATEGORIES = [
+    { value: 'RENDA_FIXA_POS' as const, label: 'Renda Fixa POS' },
+    { value: 'RENDA_FIXA_PRE' as const, label: 'Renda Fixa PRE' },
+    { value: 'RENDA_FIXA_IPCA' as const, label: 'Renda Fixa IPCA' },
+    { value: 'ACOES' as const, label: 'Ações' },
+    { value: 'CRIPTOMOEDAS' as const, label: 'Criptomoedas' },
+    { value: 'IMOVEIS' as const, label: 'Imóveis' },
+    { value: 'CARROS' as const, label: 'Carros' },
+  ] as const;
+
   useEffect(() => {
     if (asset) {
-      setFormData({
+      const newFormData: FormData = {
         name: asset.name || '',
-        current_value: asset.current_value ? asset.current_value.toString().replace('.', ',') : '',
-        initial_value: asset.initial_value ? asset.initial_value.toString().replace('.', ',') : '',
+        current_value: asset.current_value ? asset.current_value.toString().replace(/\./g, ',').replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1.') : '',
+        initial_value: asset.initial_value ? asset.initial_value.toString().replace(/\./g, ',').replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1.') : '',
         company: asset.company || '',
         expiryDate: asset.expiryDate ? asset.expiryDate.split('T')[0] : '',
         interest_rate: asset.interest_rate ? asset.interest_rate.toString() : '',
-        is_variable_income: asset.is_variable_income || false,
-      });
+        category: (asset.category || 'RENDA_FIXA_POS') as FormData['category'],
+      };
+      setFormData(newFormData);
     } else {
       setFormData({
         name: '',
         current_value: '',
         company: '',
         expiryDate: '',
-        is_variable_income: false,
+        category: 'RENDA_FIXA_POS',
         initial_value: '',
         interest_rate: '',
       });
@@ -89,27 +115,34 @@ const AssetForm: React.FC<AssetFormProps> = ({ open, onClose, onSave, asset }) =
     }
   };
 
-  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, checked } = e.target;
+  const handleCategoryChange = (e: SelectChangeEvent) => {
+    const value = e.target.value as CategoryType;
     setFormData(prev => ({
       ...prev,
-      [name]: checked
+      category: value
     }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
+    
+    const assetData = {
       ...formData,
-      current_value: formData.current_value ? parseCurrency(formData.current_value) : 0,
-      initial_value: formData.initial_value ? parseCurrency(formData.initial_value) : 0,
-      interest_rate: Number(formData.interest_rate) || 0,
-      expiryDate: formData.expiryDate ? format(new Date(formData.expiryDate), 'yyyy-MM-dd') : null,
-    });
+      current_value: parseCurrency(formData.current_value),
+      initial_value: parseCurrency(formData.initial_value),
+      interest_rate: formData.interest_rate ? parseFloat(formData.interest_rate) : null,
+      expiryDate: formData.expiryDate || null,
+      category: formData.category,
+    };
+    
+    onSave(assetData);
   };
 
+  // Generate a unique key for the form to force re-render when editing different assets
+  const formKey = asset ? `edit-${asset.id}` : 'new';
+  
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth key={formKey}>
       <DialogTitle>
         <Box display="flex" justifyContent="space-between" alignItems="center">
           <Typography variant="h6">
@@ -122,7 +155,7 @@ const AssetForm: React.FC<AssetFormProps> = ({ open, onClose, onSave, asset }) =
       </DialogTitle>
       <form onSubmit={handleSubmit}>
         <DialogContent dividers>
-          <Box display="grid" gap={2}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 400 }}>
             <TextField
               name="name"
               label="Nome do Ativo"
@@ -134,7 +167,7 @@ const AssetForm: React.FC<AssetFormProps> = ({ open, onClose, onSave, asset }) =
               variant="outlined"
             />
             
-            <Box display="grid" gridTemplateColumns="1fr 1fr" gap={2}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
               <TextField
                 name="current_value"
                 label="Valor Atual"
@@ -167,7 +200,7 @@ const AssetForm: React.FC<AssetFormProps> = ({ open, onClose, onSave, asset }) =
               />
             </Box>
 
-            <Box display="grid" gridTemplateColumns="1fr 1fr" gap={2}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
               <TextField
                 name="company"
                 label="Corretora/Instituição"
@@ -191,7 +224,7 @@ const AssetForm: React.FC<AssetFormProps> = ({ open, onClose, onSave, asset }) =
               />
             </Box>
 
-            <Box display="grid" gridTemplateColumns="1fr 1fr" gap={2}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
               <TextField
                 name="interest_rate"
                 label="Taxa de Juros (%)"
@@ -205,18 +238,23 @@ const AssetForm: React.FC<AssetFormProps> = ({ open, onClose, onSave, asset }) =
                   min: '0'
                 }}
               />
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={formData.is_variable_income}
-                    onChange={handleCheckboxChange}
-                    name="is_variable_income"
-                    color="primary"
-                  />
-                }
-                label="Renda Variável"
-                sx={{ mt: 2, ml: 1 }}
-              />
+              <FormControl fullWidth margin="normal" variant="outlined">
+                <InputLabel id="category-label">Categoria</InputLabel>
+                <Select
+                  labelId="category-label"
+                  id="category"
+                  value={formData.category}
+                  label="Categoria"
+                  onChange={handleCategoryChange}
+                  sx={{ mt: 1 }}
+                >
+                  {CATEGORIES.map((category) => (
+                    <MenuItem key={category.value} value={category.value}>
+                      {category.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Box>
           </Box>
         </DialogContent>

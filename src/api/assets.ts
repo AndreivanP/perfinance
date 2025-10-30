@@ -13,7 +13,7 @@ export interface Asset {
   is_active: boolean;
   username: string;
   current_value: number;
-  is_variable_income: boolean;
+  category: 'RENDA_FIXA_POS' | 'RENDA_FIXA_PRE' | 'RENDA_FIXA_IPCA' | 'ACOES' | 'CRIPTOMOEDAS' | 'IMOVEIS' | 'CARROS';
   expiryDate: string | null;
 }
 

@@ -30,6 +30,17 @@ import type { Asset } from '../api/assets';
 import AssetForm from '../components/AssetForm';
 import { formatCurrency, formatDate } from '../utils/formatters';
 
+// Map category values to their display labels
+const CATEGORY_LABELS: Record<string, string> = {
+  'RENDA_FIXA_POS': 'Renda Fixa POS',
+  'RENDA_FIXA_PRE': 'Renda Fixa PRE',
+  'RENDA_FIXA_IPCA': 'Renda Fixa IPCA',
+  'ACOES': 'Ações',
+  'CRIPTOMOEDAS': 'Criptomoedas',
+  'IMOVEIS': 'Imóveis',
+  'CARROS': 'Carros'
+};
+
 const AtivosPage: React.FC = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -227,7 +238,7 @@ const AtivosPage: React.FC = () => {
                         {asset.expiryDate ? formatDate(asset.expiryDate) : '-'}
                       </TableCell>
                       <TableCell>
-                        {asset.is_variable_income ? 'Renda Variável' : 'Renda Fixa'}
+                        {CATEGORY_LABELS[asset.category] || asset.category}
                       </TableCell>
                       <TableCell align="right">
                         <Tooltip title="Editar">
