@@ -93,7 +93,7 @@ const AssetForm: React.FC<AssetFormProps> = ({ open, onClose, onSave, asset }) =
         interest_rate: '',
       });
     }
-  }, [asset]);
+  }, [asset, open]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
