@@ -21,6 +21,30 @@ export const triggerAssetControl = async (username: string = 'Andreivan'): Promi
   );
 };
 
+export const triggerAssetControlByCategory = async (
+  username: string = 'Andreivan',
+  category: string
+): Promise<void> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('No authentication token found');
+  }
+
+  if (!category) return;
+
+  await axios.post(
+    `${API_URL}/users/${username}/assets-control`,
+    {},
+    {
+      params: { category },
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+};
+
 export interface AssetControl {
   id: string;
   controlDate: string;

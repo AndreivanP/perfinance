@@ -25,7 +25,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import { fetchAssets, deleteAsset, createAsset, updateAsset } from '../api/assets';
-import { triggerAssetControl } from '../api/assetControl';
+import { triggerAssetControl, triggerAssetControlByCategory } from '../api/assetControl';
 import type { Asset } from '../api/assets';
 import AssetForm from '../components/AssetForm';
 import { formatCurrency, formatDate } from '../utils/formatters';
@@ -78,6 +78,7 @@ const AtivosPage: React.FC = () => {
 
   const handleDeleteConfirm = async () => {
     if (!assetToDelete) return;
+    const assetCategory = assets.find((asset) => asset.id === assetToDelete)?.category;
     
     try {
       setLoading(true);
@@ -86,6 +87,9 @@ const AtivosPage: React.FC = () => {
       // Trigger asset control update after successful deletion
       try {
         await triggerAssetControl(username);
+        if (assetCategory) {
+          await triggerAssetControlByCategory(username, assetCategory);
+        }
       } catch (err) {
         console.warn('Warning: Could not update asset control after deletion', err);
         // Don't fail the whole operation if asset control update fails
@@ -140,6 +144,10 @@ const AtivosPage: React.FC = () => {
       // Trigger asset control update after successful save/update
       try {
         await triggerAssetControl(username);
+        const categoryId = assetData?.category || editingAsset?.category;
+        if (categoryId) {
+          await triggerAssetControlByCategory(username, categoryId);
+        }
       } catch (err) {
         console.warn('Warning: Could not update asset control', err);
         // Don't fail the whole operation if asset control update fails
