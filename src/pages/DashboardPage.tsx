@@ -66,6 +66,9 @@ const CATEGORY_COLORS: Record<Asset['category'], string> = {
   CARROS: '#ff7043',
 };
 
+const formatMonthYear = (date: Date) =>
+  date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+
 const DashboardPage: React.FC = () => {
   const [assetControls, setAssetControls] = useState<AssetControl[]>([]);
   const [currentTotal, setCurrentTotal] = useState<CurrentTotal | null>(null);
@@ -136,15 +139,78 @@ const DashboardPage: React.FC = () => {
   // Avoid a layout jump when reaching the last page with empty rows.
   const emptyRows = page > 0 ? Math.max(0, (1 + page) * rowsPerPage - assetControls.length) : 0;
 
-  // Prepare chart data
+  // Prepare chart data with quarterly peaks and current month
   const chartData = useMemo(() => {
-    return assetControls.map(control => ({
-      date: new Date(control.controlDate).getTime(),
-      value: control.currentTotalValue,
-      formattedDate: formatDate(control.controlDate),
-      formattedValue: formatCurrency(control.currentTotalValue)
-    }));
-  }, [assetControls]);
+    if (!assetControls.length) {
+      const currentValue = currentTotal?.current_total;
+      if (!currentValue) return [];
+      const now = new Date();
+      now.setDate(1);
+      now.setHours(0, 0, 0, 0);
+      return [{
+        date: now.getTime(),
+        value: currentValue,
+        formattedDate: formatMonthYear(now),
+        formattedValue: formatCurrency(currentValue),
+      }];
+    }
+
+    const quarterMap = new Map<string, { date: Date; value: number }>();
+
+    assetControls.forEach((control) => {
+      const controlDate = new Date(control.controlDate);
+      if (Number.isNaN(controlDate.getTime())) return;
+      const quarterMonth = Math.floor(controlDate.getMonth() / 3) * 3;
+      const quarterStart = new Date(controlDate.getFullYear(), quarterMonth, 1);
+      const key = `${quarterStart.getFullYear()}-${quarterStart.getMonth()}`;
+      const existing = quarterMap.get(key);
+
+      if (!existing || control.currentTotalValue > existing.value) {
+        quarterMap.set(key, { date: quarterStart, value: control.currentTotalValue });
+      }
+    });
+
+    const quarterlyData = Array.from(quarterMap.values())
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .map(({ date, value }) => ({
+        date: date.getTime(),
+        value,
+        formattedDate: formatMonthYear(date),
+        formattedValue: formatCurrency(value),
+      }));
+
+    const currentValue =
+      currentTotal?.current_total ?? assetControls[assetControls.length - 1]?.currentTotalValue;
+
+    if (currentValue) {
+      const now = new Date();
+      now.setDate(1);
+      now.setHours(0, 0, 0, 0);
+      const lastPoint = quarterlyData[quarterlyData.length - 1];
+      const isSameMonth =
+        lastPoint &&
+        new Date(lastPoint.date).getFullYear() === now.getFullYear() &&
+        new Date(lastPoint.date).getMonth() === now.getMonth();
+
+      if (isSameMonth) {
+        quarterlyData[quarterlyData.length - 1] = {
+          date: now.getTime(),
+          value: currentValue,
+          formattedDate: formatMonthYear(now),
+          formattedValue: formatCurrency(currentValue),
+        };
+      } else {
+        quarterlyData.push({
+          date: now.getTime(),
+          value: currentValue,
+          formattedDate: formatMonthYear(now),
+          formattedValue: formatCurrency(currentValue),
+        });
+      }
+    }
+
+    return quarterlyData;
+  }, [assetControls, currentTotal]);
 
   // Calculate total value and growth
   const { totalValue, growth } = useMemo(() => {
@@ -382,11 +448,7 @@ const DashboardPage: React.FC = () => {
                     <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
                     <XAxis
                       dataKey="date"
-                      tickFormatter={(timestamp) => {
-                        const date = new Date(timestamp);
-                        // Only show month and year, with reduced frequency
-                        return date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
-                      }}
+                      tickFormatter={(timestamp) => formatMonthYear(new Date(timestamp))}
                       tick={{ fill: theme.palette.text.secondary, fontSize: 12 }}
                       minTickGap={80}
                       interval="preserveStartEnd"
@@ -403,7 +465,7 @@ const DashboardPage: React.FC = () => {
                     />
                     <RechartsTooltip
                       formatter={(value: number) => formatCurrency(Number(value))}
-                      labelFormatter={(label) => formatDate(new Date(label))}
+                      labelFormatter={(label) => formatMonthYear(new Date(label))}
                       contentStyle={{
                         backgroundColor: theme.palette.background.paper,
                         borderColor: theme.palette.divider,
