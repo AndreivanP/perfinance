@@ -36,54 +36,31 @@ export interface CurrentTotal {
 
 export const fetchAssetControls = async (username: string): Promise<AssetControl[]> => {
   const API_URL = 'http://localhost:8080';
-  const results: AssetControl[] = [];
-  
-  // Define the start date (2016-12-31)
-  let currentStart = new Date('2016-12-31T00:00:00');
-  const endDate = new Date(); // Current date
-  
-  while (currentStart < endDate) {
-    // Calculate end of current 3-month period
-    const periodEnd = new Date(currentStart);
-    periodEnd.setMonth(periodEnd.getMonth() + 3);
-    
-    // Format dates for the API
-    const formatDate = (date: Date) => {
-      return date.toISOString().split('T')[0].replace(/-/g, '/');
-    };
-    
-    const since = `${formatDate(currentStart)} 00:00:00`;
-    const till = `${formatDate(periodEnd > endDate ? endDate : periodEnd)} 23:59:59`;
-    
-    try {
-      const response = await axios.get<AssetControl[]>(
-        `${API_URL}/users/${encodeURIComponent(username)}/assets-control`,
-        {
-          params: { since, till },
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+
+  const formatDate = (date: Date) => date.toISOString().split('T')[0].replace(/-/g, '/');
+
+  const since = `${formatDate(new Date('2016-12-31T00:00:00'))} 00:00:00`;
+  const till = `${formatDate(new Date())} 23:59:59`;
+
+  try {
+    const response = await axios.get<AssetControl[]>(
+      `${API_URL}/users/${encodeURIComponent(username)}/assets-control`,
+      {
+        params: { since, till },
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
-      );
-      
-      if (response.data && response.data.length > 0) {
-        results.push(...response.data);
       }
-    } catch (error) {
-      console.error(`Error fetching data for period ${since} - ${till}:`, error);
-      // Continue with next period even if one fails
-    }
-    
-    // Move to next period
-    currentStart = new Date(periodEnd);
-    // Add one day to avoid overlapping with the previous period
-    currentStart.setDate(currentStart.getDate() + 1);
+    );
+
+    const data = Array.isArray(response.data) ? response.data : [];
+    return data.sort(
+      (a, b) => new Date(a.controlDate).getTime() - new Date(b.controlDate).getTime()
+    );
+  } catch (error) {
+    console.error('Erro ao buscar dados de controle de ativos:', error);
+    return [];
   }
-  
-  // Sort results by date
-  return results.sort((a, b) => 
-    new Date(a.controlDate).getTime() - new Date(b.controlDate).getTime()
-  );
 };
 
 export const fetchCurrentTotal = async (username: string): Promise<CurrentTotal> => {
