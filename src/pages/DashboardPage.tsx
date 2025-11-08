@@ -25,6 +25,8 @@ import {
 import { getAuthToken } from '../api/auth';
 import { fetchAssetControls, fetchCurrentTotal } from '../api/assetControl';
 import type { AssetControl, CurrentTotal } from '../api/assetControl';
+import { fetchAssets } from '../api/assets';
+import type { Asset } from '../api/assets';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import TableChartIcon from '@mui/icons-material/TableChart';
@@ -36,12 +38,38 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
   Area,
-  AreaChart
+  AreaChart,
+  PieChart,
+  Pie,
+  Cell,
+  Legend
 } from 'recharts';
+import type { PieLabelRenderProps } from 'recharts';
+
+const CATEGORY_LABELS: Record<Asset['category'], string> = {
+  RENDA_FIXA_POS: 'Renda Fixa Pós',
+  RENDA_FIXA_PRE: 'Renda Fixa Pré',
+  RENDA_FIXA_IPCA: 'Renda Fixa IPCA',
+  ACOES: 'Ações',
+  CRIPTOMOEDAS: 'Criptomoedas',
+  IMOVEIS: 'Imóveis',
+  CARROS: 'Carros',
+};
+
+const CATEGORY_COLORS: Record<Asset['category'], string> = {
+  RENDA_FIXA_POS: '#1976d2',
+  RENDA_FIXA_PRE: '#64b5f6',
+  RENDA_FIXA_IPCA: '#4caf50',
+  ACOES: '#ff9800',
+  CRIPTOMOEDAS: '#ab47bc',
+  IMOVEIS: '#009688',
+  CARROS: '#ff7043',
+};
 
 const DashboardPage: React.FC = () => {
   const [assetControls, setAssetControls] = useState<AssetControl[]>([]);
   const [currentTotal, setCurrentTotal] = useState<CurrentTotal | null>(null);
+  const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -61,10 +89,14 @@ const DashboardPage: React.FC = () => {
       }
       
       const username = 'Andreivan'; // In a real app, get this from user context or token
-      
-      // Fetch asset controls (required)
-      const assetData = await fetchAssetControls(username);
-      setAssetControls(assetData);
+
+      // Fetch asset controls and assets in parallel
+      const [assetControlData, assetsData] = await Promise.all([
+        fetchAssetControls(username),
+        fetchAssets(username)
+      ]);
+      setAssetControls(assetControlData);
+      setAssets(assetsData);
       
       // Fetch current total (optional - don't fail if this errors)
       try {
@@ -132,32 +164,37 @@ const DashboardPage: React.FC = () => {
     };
   }, [assetControls]);
 
+  const categoryDistribution = useMemo(() => {
+    const totalAmount = currentTotal?.current_total ?? totalValue;
+    if (!assets.length || !totalAmount || totalAmount <= 0) {
+      return [];
+    }
+
+    const totals = assets.reduce<Partial<Record<Asset['category'], number>>>((acc, asset) => {
+      const value = asset.current_value ?? 0;
+      acc[asset.category] = (acc[asset.category] ?? 0) + value;
+      return acc;
+    }, {});
+
+    return Object.entries(totals)
+      .filter(([, value]) => (value ?? 0) > 0)
+      .map(([category, value]) => {
+        const percent = Number((((value ?? 0) / totalAmount) * 100).toFixed(2));
+        return {
+          category: category as Asset['category'],
+          name: CATEGORY_LABELS[category as Asset['category']],
+          rawValue: value ?? 0,
+          percent,
+        };
+      })
+      .filter((item) => item.percent > 0)
+      .sort((a, b) => b.rawValue - a.rawValue);
+  }, [assets, currentTotal, totalValue]);
+
+  const topCategory = categoryDistribution[0];
+
   return (
-    <Container maxWidth="xl" sx={{ py: 3 }}>
-      <Box sx={{ 
-        mb: 4,
-        pb: 2,
-        borderBottom: '1px solid',
-        borderColor: 'divider'
-      }}>
-        <Typography 
-          variant="h4" 
-          component="h1"
-          sx={{ 
-            fontWeight: 600, 
-            mb: 0.5,
-            background: 'linear-gradient(45deg, #1976d2 30%, #21CBF3 90%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            display: 'inline-block'
-          }}
-        >
-          Painel de Controle de Ativos
-        </Typography>
-        <Typography variant="subtitle1" color="text.secondary">
-          Acompanhe o crescimento financeiro ao longo do tempo
-        </Typography>
-      </Box>
+    <Container maxWidth="xl" sx={{ py: 3, position: 'relative' }}>
       <Box sx={{ position: 'absolute', top: 16, right: 16 }}>
         <Tooltip title="Atualizar dados">
           <IconButton onClick={handleRefresh} disabled={loading}>
@@ -224,23 +261,6 @@ const DashboardPage: React.FC = () => {
               <Card elevation={2}>
                 <CardContent>
                   <Typography color="text.secondary" gutterBottom>
-                    Renda Variável Total
-                  </Typography>
-                  <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-                    {currentTotal && currentTotal.variable_income_total != null 
-                      ? formatCurrency(currentTotal.variable_income_total) 
-                      : '-'}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    Ativos de renda variável atuais
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6, lg: 4 }}>
-              <Card elevation={2}>
-                <CardContent>
-                  <Typography color="text.secondary" gutterBottom>
                     Porcentagem de Renda Variável
                   </Typography>
                   <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
@@ -254,7 +274,76 @@ const DashboardPage: React.FC = () => {
                 </CardContent>
               </Card>
             </Grid>
+            {topCategory && (
+              <Grid size={{ xs: 12, md: 6, lg: 4 }}>
+                <Card elevation={2}>
+                  <CardContent>
+                    <Typography color="text.secondary" gutterBottom>
+                      Maior Categoria ({topCategory.name})
+                    </Typography>
+                    <Typography variant="h4" component="div" sx={{ fontWeight: 'bold' }}>
+                      {formatCurrency(topCategory.rawValue)}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      {topCategory.percent.toFixed(2)}% do total
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            )}
           </Grid>
+
+          {categoryDistribution.length > 0 && (
+            <Card elevation={2} sx={{ mb: 3 }}>
+              <CardContent>
+                <Typography variant="h6" sx={{ mb: 1 }}>
+                  Distribuição de Ativos por Categoria
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Percentual baseado no valor total atual da carteira
+                </Typography>
+                <Box sx={{ width: '100%', height: 320 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={categoryDistribution}
+                        dataKey="percent"
+                        nameKey="name"
+                        innerRadius={70}
+                        outerRadius={120}
+                        paddingAngle={2}
+                        label={(props: PieLabelRenderProps) => {
+                          const value = Array.isArray(props.value) ? props.value[0] : props.value;
+                          const pct = typeof value === 'number' ? value : 0;
+                          return `${pct.toFixed(1)}%`;
+                        }}
+                      >
+                        {categoryDistribution.map((entry) => (
+                          <Cell
+                            key={entry.category}
+                            fill={CATEGORY_COLORS[entry.category]}
+                          />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        formatter={(_value: number, _name, item) => [
+                          formatCurrency(item?.payload?.rawValue ?? 0),
+                          item?.payload?.name ?? ''
+                        ]}
+                        contentStyle={{
+                          backgroundColor: theme.palette.background.paper,
+                          borderColor: theme.palette.divider,
+                          borderRadius: theme.shape.borderRadius,
+                          boxShadow: theme.shadows[2],
+                        }}
+                      />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </Box>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Alternar entre Gráfico/Tabela */}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>

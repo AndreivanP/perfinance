@@ -25,14 +25,6 @@ interface AssetFormProps {
 }
 
 const AssetForm: React.FC<AssetFormProps> = ({ open, onClose, onSave, asset }) => {
-  const formatCurrency = (value: number | string): string => {
-    const num = typeof value === 'string' ? parseFloat(value) : value;
-    return isNaN(num) ? '' : num.toLocaleString('pt-BR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    });
-  };
-
   const parseCurrency = (value: string): number => {
     return parseFloat(value.replace(/\./g, '').replace(',', '.')) || 0;
   };
