@@ -302,7 +302,7 @@ const DashboardPage: React.FC = () => {
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                   Percentual baseado no valor total atual da carteira
                 </Typography>
-                <Box sx={{ width: '100%', height: 320 }}>
+                <Box sx={{ width: '100%', height: 360 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
