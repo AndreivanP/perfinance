@@ -50,6 +50,7 @@ export interface AssetControl {
   controlDate: string;
   currentTotalValue: number;
   username: string;
+  category?: string | null;
 }
 
 export interface CurrentTotal {

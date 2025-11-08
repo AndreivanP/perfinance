@@ -66,6 +66,12 @@ const CATEGORY_COLORS: Record<Asset['category'], string> = {
   CARROS: '#ff7043',
 };
 
+const PERFORMANCE_CATEGORIES: Array<{ key: Asset['category']; label: string }> = [
+  { key: 'RENDA_FIXA_POS', label: 'Renda Fixa Pós - Variação Mensal' },
+  { key: 'RENDA_FIXA_IPCA', label: 'Renda Fixa IPCA - Variação Mensal' },
+  { key: 'ACOES', label: 'Ações - Variação Mensal' },
+];
+
 const formatMonthYear = (date: Date) =>
   date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
 
@@ -139,9 +145,14 @@ const DashboardPage: React.FC = () => {
   // Avoid a layout jump when reaching the last page with empty rows.
   const emptyRows = page > 0 ? Math.max(0, (1 + page) * rowsPerPage - assetControls.length) : 0;
 
+  const overallControls = useMemo(
+    () => assetControls.filter((control) => !control.category),
+    [assetControls]
+  );
+
   // Prepare chart data with quarterly peaks and current month
   const chartData = useMemo(() => {
-    if (!assetControls.length) {
+    if (!overallControls.length) {
       const currentValue = currentTotal?.current_total;
       if (!currentValue) return [];
       const now = new Date();
@@ -157,7 +168,7 @@ const DashboardPage: React.FC = () => {
 
     const quarterMap = new Map<string, { date: Date; value: number }>();
 
-    assetControls.forEach((control) => {
+    overallControls.forEach((control) => {
       const controlDate = new Date(control.controlDate);
       if (Number.isNaN(controlDate.getTime())) return;
       const quarterMonth = Math.floor(controlDate.getMonth() / 3) * 3;
@@ -180,7 +191,7 @@ const DashboardPage: React.FC = () => {
       }));
 
     const currentValue =
-      currentTotal?.current_total ?? assetControls[assetControls.length - 1]?.currentTotalValue;
+      currentTotal?.current_total ?? overallControls[overallControls.length - 1]?.currentTotalValue;
 
     if (currentValue) {
       const now = new Date();
@@ -210,25 +221,28 @@ const DashboardPage: React.FC = () => {
     }
 
     return quarterlyData;
-  }, [assetControls, currentTotal]);
+  }, [overallControls, currentTotal]);
 
   // Calculate total value and growth
   const { totalValue, growth } = useMemo(() => {
-    if (assetControls.length === 0) return { totalValue: 0, growth: 0 };
-    
-    if (assetControls.length === 1) {
-      return { totalValue: assetControls[0].currentTotalValue, growth: 0 };
+    if (overallControls.length === 0) {
+      const fallbackTotal = currentTotal?.current_total ?? 0;
+      return { totalValue: fallbackTotal, growth: 0 };
     }
     
-    const first = assetControls[0].currentTotalValue;
-    const last = assetControls[assetControls.length - 1].currentTotalValue;
+    if (overallControls.length === 1) {
+      return { totalValue: overallControls[0].currentTotalValue, growth: 0 };
+    }
+    
+    const first = overallControls[0].currentTotalValue;
+    const last = overallControls[overallControls.length - 1].currentTotalValue;
     const growth = ((last - first) / first) * 100;
     
     return {
       totalValue: last,
       growth: isFinite(growth) ? growth : 0
     };
-  }, [assetControls]);
+  }, [overallControls, currentTotal]);
 
   const categoryDistribution = useMemo(() => {
     const totalAmount = currentTotal?.current_total ?? totalValue;
@@ -258,6 +272,57 @@ const DashboardPage: React.FC = () => {
   }, [assets, currentTotal, totalValue]);
 
   const topCategory = categoryDistribution[0];
+
+  const categoryPerformance = useMemo(() => {
+    const categoryMap = new Map<string, Map<string, number>>();
+
+    assetControls.forEach((control) => {
+      if (!control.category) return;
+      const categoryKey = control.category;
+      const date = new Date(control.controlDate);
+      if (Number.isNaN(date.getTime())) return;
+      date.setDate(1);
+      date.setHours(0, 0, 0, 0);
+      const monthKey = date.toISOString();
+
+      if (!categoryMap.has(categoryKey)) {
+        categoryMap.set(categoryKey, new Map());
+      }
+
+      const monthMap = categoryMap.get(categoryKey)!;
+      const currentValue = control.currentTotalValue ?? 0;
+      const existingValue = monthMap.get(monthKey) ?? 0;
+
+      if (currentValue > existingValue) {
+        monthMap.set(monthKey, currentValue);
+      }
+    });
+
+    return PERFORMANCE_CATEGORIES.map(({ key, label }) => {
+      const monthMap = categoryMap.get(key);
+      if (!monthMap || monthMap.size === 0) {
+        return { key, label, percentChange: null, currentValue: null };
+      }
+
+      const sortedMonths = Array.from(monthMap.entries()).sort(
+        (a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime()
+      );
+
+      const current = sortedMonths[sortedMonths.length - 1];
+      const previous = sortedMonths[sortedMonths.length - 2];
+
+      if (!current) {
+        return { key, label, percentChange: null, currentValue: null };
+      }
+
+      if (!previous || previous[1] === 0) {
+        return { key, label, percentChange: null, currentValue: current[1] };
+      }
+
+      const percentChange = ((current[1] - previous[1]) / previous[1]) * 100;
+      return { key, label, percentChange, currentValue: current[1] };
+    });
+  }, [assetControls]);
 
   return (
     <Container maxWidth="xl" sx={{ py: 3, position: 'relative' }}>
@@ -314,9 +379,9 @@ const DashboardPage: React.FC = () => {
                     >
                       {growth >= 0 ? '↑' : '↓'} {Math.abs(growth).toFixed(2)}% geral
                     </Typography>
-                    {assetControls.length > 0 && (
+                    {overallControls.length > 0 && (
                       <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-                        desde {formatDate(assetControls[0].controlDate)}
+                        desde {formatDate(overallControls[0].controlDate)}
                       </Typography>
                     )}
                   </Box>
@@ -360,55 +425,101 @@ const DashboardPage: React.FC = () => {
           </Grid>
 
           {categoryDistribution.length > 0 && (
-            <Card elevation={2} sx={{ mb: 3 }}>
-              <CardContent>
-                <Typography variant="h6" sx={{ mb: 1 }}>
-                  Distribuição de Ativos por Categoria
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Percentual baseado no valor total atual da carteira
-                </Typography>
-                <Box sx={{ width: '100%', height: 360 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={categoryDistribution}
-                        dataKey="percent"
-                        nameKey="name"
-                        innerRadius={70}
-                        outerRadius={120}
-                        paddingAngle={2}
-                        label={(props: PieLabelRenderProps) => {
-                          const value = Array.isArray(props.value) ? props.value[0] : props.value;
-                          const pct = typeof value === 'number' ? value : 0;
-                          return `${pct.toFixed(1)}%`;
-                        }}
-                      >
-                        {categoryDistribution.map((entry) => (
-                          <Cell
-                            key={entry.category}
-                            fill={CATEGORY_COLORS[entry.category]}
+            <Grid container spacing={3} sx={{ mb: 3 }}>
+              <Grid size={{ xs: 12, lg: 8 }}>
+                <Card elevation={2} sx={{ height: '100%' }}>
+                  <CardContent>
+                    <Typography variant="h6" sx={{ mb: 1 }}>
+                      Distribuição de Ativos por Categoria
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      Percentual baseado no valor total atual da carteira
+                    </Typography>
+                    <Box sx={{ width: '100%', height: 360 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={categoryDistribution}
+                            dataKey="percent"
+                            nameKey="name"
+                            innerRadius={70}
+                            outerRadius={120}
+                            paddingAngle={2}
+                            label={(props: PieLabelRenderProps) => {
+                              const value = Array.isArray(props.value) ? props.value[0] : props.value;
+                              const pct = typeof value === 'number' ? value : 0;
+                              return `${pct.toFixed(1)}%`;
+                            }}
+                          >
+                            {categoryDistribution.map((entry) => (
+                              <Cell
+                                key={entry.category}
+                                fill={CATEGORY_COLORS[entry.category]}
+                              />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip
+                            formatter={(_value: number, _name, item) => [
+                              formatCurrency(item?.payload?.rawValue ?? 0),
+                              item?.payload?.name ?? ''
+                            ]}
+                            contentStyle={{
+                              backgroundColor: theme.palette.background.paper,
+                              borderColor: theme.palette.divider,
+                              borderRadius: theme.shape.borderRadius,
+                              boxShadow: theme.shadows[2],
+                            }}
                           />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip
-                        formatter={(_value: number, _name, item) => [
-                          formatCurrency(item?.payload?.rawValue ?? 0),
-                          item?.payload?.name ?? ''
-                        ]}
-                        contentStyle={{
-                          backgroundColor: theme.palette.background.paper,
-                          borderColor: theme.palette.divider,
-                          borderRadius: theme.shape.borderRadius,
-                          boxShadow: theme.shadows[2],
-                        }}
-                      />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </Box>
-              </CardContent>
-            </Card>
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid size={{ xs: 12, lg: 4 }}>
+                <Grid container spacing={3}>
+                  {categoryPerformance.map(({ key, label, percentChange, currentValue }) => (
+                    <Grid key={key} size={{ xs: 12 }}>
+                      <Card elevation={2}>
+                        <CardContent>
+                          <Typography color="text.secondary" gutterBottom>
+                            {label}
+                          </Typography>
+                          <Typography
+                            variant="h4"
+                            sx={{
+                              fontWeight: 'bold',
+                              color:
+                                typeof percentChange === 'number'
+                                  ? percentChange > 0
+                                    ? 'success.main'
+                                    : percentChange < 0
+                                      ? 'error.main'
+                                      : 'text.primary'
+                                  : 'text.primary'
+                            }}
+                          >
+                            {typeof percentChange === 'number'
+                              ? `${percentChange >= 0 ? '↑' : '↓'} ${Math.abs(percentChange).toFixed(2)}%`
+                              : currentValue != null
+                                ? formatCurrency(currentValue)
+                                : '-'}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                            {typeof percentChange === 'number'
+                              ? `Atual: ${formatCurrency(currentValue ?? 0)}`
+                              : currentValue != null
+                                ? 'Sem variação anterior disponível'
+                                : 'Sem dados disponíveis'}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  ))}
+                </Grid>
+              </Grid>
+            </Grid>
           )}
 
           {/* Alternar entre Gráfico/Tabela */}
