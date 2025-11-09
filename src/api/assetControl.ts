@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { getAuthToken } from './auth';
-
-const API_URL = 'http://localhost:8080';
+import { buildApiUrl } from '../config/api';
 
 export const triggerAssetControl = async (username: string = 'Andreivan'): Promise<void> => {
   const token = getAuthToken();
@@ -10,7 +9,7 @@ export const triggerAssetControl = async (username: string = 'Andreivan'): Promi
   }
 
   await axios.post(
-    `${API_URL}/users/${username}/assets-control`,
+    buildApiUrl(`/users/${encodeURIComponent(username)}/assets-control`),
     {},
     {
       headers: {
@@ -33,7 +32,7 @@ export const triggerAssetControlByCategory = async (
   if (!category) return;
 
   await axios.post(
-    `${API_URL}/users/${username}/assets-control`,
+    buildApiUrl(`/users/${encodeURIComponent(username)}/assets-control`),
     {},
     {
       params: { category },
@@ -60,8 +59,6 @@ export interface CurrentTotal {
 }
 
 export const fetchAssetControls = async (username: string): Promise<AssetControl[]> => {
-  const API_URL = 'http://localhost:8080';
-
   const formatDate = (date: Date) => date.toISOString().split('T')[0].replace(/-/g, '/');
 
   const since = `${formatDate(new Date('2016-12-31T00:00:00'))} 00:00:00`;
@@ -69,7 +66,7 @@ export const fetchAssetControls = async (username: string): Promise<AssetControl
 
   try {
     const response = await axios.get<AssetControl[]>(
-      `${API_URL}/users/${encodeURIComponent(username)}/assets-control`,
+      buildApiUrl(`/users/${encodeURIComponent(username)}/assets-control`),
       {
         params: { since, till },
         headers: {
@@ -89,11 +86,9 @@ export const fetchAssetControls = async (username: string): Promise<AssetControl
 };
 
 export const fetchCurrentTotal = async (username: string): Promise<CurrentTotal> => {
-  const API_URL = 'http://localhost:8080';
-  
   try {
     const response = await axios.get<CurrentTotal>(
-      `${API_URL}/users/${encodeURIComponent(username)}/assets/current-total`,
+      buildApiUrl(`/users/${encodeURIComponent(username)}/assets/current-total`),
       {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`

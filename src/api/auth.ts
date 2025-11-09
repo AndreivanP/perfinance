@@ -1,13 +1,12 @@
 import axios from 'axios';
-
-const API_URL = 'http://localhost:8080';
+import { buildApiUrl } from '../config/api';
 
 export interface AuthResponse {
   token: string;
 }
 
 export const login = async (username: string, password: string): Promise<AuthResponse> => {
-  const response = await axios.post<AuthResponse>(`${API_URL}/authenticate`, {
+  const response = await axios.post<AuthResponse>(buildApiUrl('/authenticate'), {
     username,
     password,
   });

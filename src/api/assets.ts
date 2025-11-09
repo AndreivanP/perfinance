@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { getAuthToken } from './auth';
-
-const API_URL = 'http://localhost:8080';
+import { buildApiUrl } from '../config/api';
 
 export interface Asset {
   id: string;
@@ -23,7 +22,7 @@ export const fetchAssets = async (username: string = 'Andreivan'): Promise<Asset
     throw new Error('No authentication token found');
   }
 
-  const response = await axios.get(`${API_URL}/users/${username}/assets`, {
+  const response = await axios.get(buildApiUrl(`/users/${encodeURIComponent(username)}/assets`), {
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
@@ -39,7 +38,7 @@ export const deleteAsset = async (id: string, username: string = 'Andreivan'): P
     throw new Error('No authentication token found');
   }
 
-  await axios.delete(`${API_URL}/users/${username}/assets/${id}`, {
+  await axios.delete(buildApiUrl(`/users/${encodeURIComponent(username)}/assets/${id}`), {
     headers: {
       'Authorization': `Bearer ${token}`,
     },
@@ -52,7 +51,7 @@ export const createAsset = async (assetData: Partial<Asset>, username: string = 
     throw new Error('No authentication token found');
   }
 
-  const response = await axios.post(`${API_URL}/users/${username}/assets`, assetData, {
+  const response = await axios.post(buildApiUrl(`/users/${encodeURIComponent(username)}/assets`), assetData, {
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
@@ -68,7 +67,7 @@ export const updateAsset = async (id: string, assetData: Partial<Asset>, usernam
     throw new Error('No authentication token found');
   }
 
-  const response = await axios.put(`${API_URL}/users/${username}/assets/${id}`, assetData, {
+  const response = await axios.put(buildApiUrl(`/users/${encodeURIComponent(username)}/assets/${id}`), assetData, {
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
