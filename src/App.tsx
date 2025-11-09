@@ -9,6 +9,9 @@ import ProtectedRoute from './components/ProtectedRoute';
 import SideMenu from './components/SideMenu';
 import { useState, useCallback } from 'react';
 
+const expandedDrawerWidth = 240;
+const collapsedDrawerWidth = 72;
+
 const theme = createTheme({
   palette: {
     mode: 'light',
@@ -46,6 +49,7 @@ const theme = createTheme({
 const AppContent = () => {
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAuthToken()));
+  const [isDrawerExpanded, setIsDrawerExpanded] = useState(false);
 
   const handleLogout = useCallback(() => {
     authLogout();
@@ -64,8 +68,27 @@ const AppContent = () => {
 
   return (
     <Box sx={{ display: 'flex' }}>
-      <SideMenu onLogout={handleLogout} />
-      <Box component="main" sx={{ flexGrow: 1, p: 3, width: { sm: `calc(100% - 240px)` } }}>
+      <SideMenu
+        onLogout={handleLogout}
+        isExpanded={isDrawerExpanded}
+        onToggleDrawer={() => setIsDrawerExpanded((prev) => !prev)}
+      />
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          width: {
+            sm: `calc(100% - ${
+              isDrawerExpanded ? expandedDrawerWidth : collapsedDrawerWidth
+            }px)`,
+          },
+          transition: (theme) =>
+            theme.transitions.create('width', {
+              duration: theme.transitions.duration.standard,
+            }),
+        }}
+      >
         <Routes>
           <Route path="/" element={
             <ProtectedRoute>
