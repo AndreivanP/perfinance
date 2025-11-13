@@ -271,67 +271,84 @@ const DashboardPage: React.FC = () => {
       .sort((a, b) => b.rawValue - a.rawValue);
   }, [assets, currentTotal, totalValue]);
 
+  const categoryDistributionMap = useMemo(() => {
+    return new Map(categoryDistribution.map((item) => [item.category, item.rawValue]));
+  }, [categoryDistribution]);
+
   const topCategory = categoryDistribution[0];
 
   const categoryPerformance = useMemo(() => {
-    const categoryMap = new Map<string, Map<string, number>>();
+    const categoryEntries = new Map<string, AssetControl[]>();
 
     assetControls.forEach((control) => {
       if (!control.category) return;
-      const categoryKey = control.category;
-      const date = new Date(control.controlDate);
-      if (Number.isNaN(date.getTime())) return;
-      date.setDate(1);
-      date.setHours(0, 0, 0, 0);
-      const monthKey = date.toISOString();
-
-      if (!categoryMap.has(categoryKey)) {
-        categoryMap.set(categoryKey, new Map());
-      }
-
-      const monthMap = categoryMap.get(categoryKey)!;
-      const currentValue = control.currentTotalValue ?? 0;
-      const existingValue = monthMap.get(monthKey) ?? 0;
-
-      if (currentValue > existingValue) {
-        monthMap.set(monthKey, currentValue);
-      }
+      const list = categoryEntries.get(control.category) ?? [];
+      list.push(control);
+      categoryEntries.set(control.category, list);
     });
 
     return PERFORMANCE_CATEGORIES.map(({ key, label }) => {
-      const monthMap = categoryMap.get(key);
-      if (!monthMap || monthMap.size === 0) {
-        return { key, label, percentChange: null, currentValue: null };
+      const entries = categoryEntries.get(key);
+      if (!entries || entries.length === 0) {
+        const fallbackValue = categoryDistributionMap.get(key) ?? null;
+        return { key, label, percentChange: null, currentValue: fallbackValue };
       }
 
-      const sortedMonths = Array.from(monthMap.entries()).sort(
-        (a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime()
+      const sortedEntries = entries
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(a.controlDate).getTime() - new Date(b.controlDate).getTime()
+        );
+
+      const monthMap = new Map<
+        string,
+        { value: number; timestamp: number }
+      >();
+
+      sortedEntries.forEach((entry) => {
+        const date = new Date(entry.controlDate);
+        if (Number.isNaN(date.getTime())) return;
+        const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+        const timestamp = date.getTime();
+        const existing = monthMap.get(monthKey);
+        if (!existing || timestamp > existing.timestamp) {
+          monthMap.set(monthKey, {
+            value: entry.currentTotalValue ?? 0,
+            timestamp,
+          });
+        }
+      });
+
+      const monthlySeries = Array.from(monthMap.values()).sort(
+        (a, b) => a.timestamp - b.timestamp
       );
 
-      const current = sortedMonths[sortedMonths.length - 1];
-      const previous = sortedMonths[sortedMonths.length - 2];
-
-      if (!current) {
-        return { key, label, percentChange: null, currentValue: null };
+      if (!monthlySeries.length) {
+        const fallbackValue = categoryDistributionMap.get(key) ?? null;
+        return { key, label, percentChange: null, currentValue: fallbackValue };
       }
 
-      if (!previous || previous[1] === 0) {
-        return { key, label, percentChange: null, currentValue: current[1] };
+      const currentMonth = monthlySeries[monthlySeries.length - 1];
+      const previousMonth = monthlySeries[monthlySeries.length - 2];
+
+      let percentChange: number | null = null;
+      if (previousMonth && previousMonth.value !== 0) {
+        percentChange =
+          ((currentMonth.value - previousMonth.value) / previousMonth.value) *
+          100;
       }
 
-      const percentChange = ((current[1] - previous[1]) / previous[1]) * 100;
-      return { key, label, percentChange, currentValue: current[1] };
+      const currentValue =
+        categoryDistributionMap.get(key) ?? currentMonth.value ?? null;
+
+      return { key, label, percentChange, currentValue };
     });
-  }, [assetControls]);
+  }, [assetControls, categoryDistributionMap]);
 
   return (
     <Container maxWidth="xl" sx={{ py: 3, position: 'relative' }}>
       <Box sx={{ position: 'absolute', top: 16, right: 16 }}>
-        <Tooltip title="Atualizar dados">
-          <IconButton onClick={handleRefresh} disabled={loading}>
-            <RefreshIcon />
-          </IconButton>
-        </Tooltip>
       </Box>
 
       {error && (
