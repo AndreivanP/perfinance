@@ -4,15 +4,8 @@ import {
   Container, 
   Typography, 
   Button, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow, 
   CircularProgress,
   Alert,
-  TablePagination,
   Grid,
   Card,
   CardContent,
@@ -27,7 +20,6 @@ import { fetchAssets } from '../api/assets';
 import type { Asset } from '../api/assets';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
-import TableChartIcon from '@mui/icons-material/TableChart';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import {
   XAxis,
@@ -65,13 +57,187 @@ const CATEGORY_COLORS: Record<Asset['category'], string> = {
 };
 
 const PERFORMANCE_CATEGORIES: Array<{ key: Asset['category']; label: string }> = [
-  { key: 'RENDA_FIXA_POS', label: 'Renda Fixa Pós - Variação Mensal' },
-  { key: 'RENDA_FIXA_IPCA', label: 'Renda Fixa IPCA - Variação Mensal' },
-  { key: 'ACOES', label: 'Ações - Variação Mensal' },
+  { key: 'RENDA_FIXA_POS', label: 'Renda Fixa Pós' },
+  { key: 'RENDA_FIXA_IPCA', label: 'Renda Fixa IPCA' },
+  { key: 'ACOES', label: 'Ações' },
 ];
 
 const formatMonthYear = (date: Date) =>
   date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+
+type ChartViewKey = 'overall' | 'RENDA_FIXA_POS' | 'RENDA_FIXA_IPCA' | 'ACOES';
+
+const CHART_VIEWS: Record<ChartViewKey, { label: string; color: string; category: Asset['category'] | null }> = {
+  overall: { label: 'Geral', color: '#2e7d32', category: null },
+  RENDA_FIXA_POS: { label: 'Renda Fixa Pós', color: '#1976d2', category: 'RENDA_FIXA_POS' },
+  RENDA_FIXA_IPCA: { label: 'Renda Fixa IPCA', color: '#388e3c', category: 'RENDA_FIXA_IPCA' },
+  ACOES: { label: 'Ações', color: '#fb8c00', category: 'ACOES' },
+} as const;
+
+const buildQuarterlySeries = (
+  records: AssetControl[],
+  fallbackValue: number | null | undefined
+) => {
+  if (!records.length) {
+    if (fallbackValue == null) return [];
+    const now = new Date();
+    now.setDate(1);
+    now.setHours(0, 0, 0, 0);
+    return [
+      {
+        date: now.getTime(),
+        value: fallbackValue,
+        formattedDate: formatMonthYear(now),
+        formattedValue: formatCurrency(fallbackValue),
+      },
+    ];
+  }
+
+  const quarterMap = new Map<string, { date: Date; value: number }>();
+
+  records.forEach((control) => {
+    const controlDate = new Date(control.controlDate);
+    if (Number.isNaN(controlDate.getTime())) return;
+    const quarterMonth = Math.floor(controlDate.getMonth() / 3) * 3;
+    const quarterStart = new Date(controlDate.getFullYear(), quarterMonth, 1);
+    const key = `${quarterStart.getFullYear()}-${quarterStart.getMonth()}`;
+    const existing = quarterMap.get(key);
+
+    if (!existing || control.currentTotalValue > existing.value) {
+      quarterMap.set(key, { date: quarterStart, value: control.currentTotalValue });
+    }
+  });
+
+  const quarterlyData = Array.from(quarterMap.values())
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
+    .map(({ date, value }) => ({
+      date: date.getTime(),
+      value,
+      formattedDate: formatMonthYear(date),
+      formattedValue: formatCurrency(value),
+    }));
+
+  const currentValue =
+    fallbackValue ?? records[records.length - 1]?.currentTotalValue ?? null;
+
+  if (currentValue != null) {
+    const now = new Date();
+    now.setDate(1);
+    now.setHours(0, 0, 0, 0);
+    const lastPoint = quarterlyData[quarterlyData.length - 1];
+    const isSameMonth =
+      lastPoint &&
+      new Date(lastPoint.date).getFullYear() === now.getFullYear() &&
+      new Date(lastPoint.date).getMonth() === now.getMonth();
+
+    if (isSameMonth) {
+      quarterlyData[quarterlyData.length - 1] = {
+        date: now.getTime(),
+        value: currentValue,
+        formattedDate: formatMonthYear(now),
+        formattedValue: formatCurrency(currentValue),
+      };
+    } else {
+      quarterlyData.push({
+        date: now.getTime(),
+        value: currentValue,
+        formattedDate: formatMonthYear(now),
+        formattedValue: formatCurrency(currentValue),
+      });
+    }
+  }
+
+  return quarterlyData;
+};
+
+const buildMonthlySeries = (
+  records: AssetControl[],
+  fallbackValue: number | null | undefined,
+  months = 12
+) => {
+  const monthMap = new Map<string, { date: Date; value: number }>();
+
+  records.forEach((control) => {
+    const controlDate = new Date(control.controlDate);
+    if (Number.isNaN(controlDate.getTime())) return;
+    const monthStart = new Date(controlDate.getFullYear(), controlDate.getMonth(), 1);
+    monthStart.setHours(0, 0, 0, 0);
+    const key = `${monthStart.getFullYear()}-${monthStart.getMonth()}`;
+    const existing = monthMap.get(key);
+
+    if (!existing || control.currentTotalValue > existing.value) {
+      monthMap.set(key, { date: monthStart, value: control.currentTotalValue });
+    }
+  });
+
+  if (fallbackValue != null) {
+    const now = new Date();
+    now.setDate(1);
+    now.setHours(0, 0, 0, 0);
+    const currentKey = `${now.getFullYear()}-${now.getMonth()}`;
+    const existing = monthMap.get(currentKey);
+    if (!existing || fallbackValue > existing.value) {
+      monthMap.set(currentKey, { date: now, value: fallbackValue });
+    }
+  }
+
+  const sortedEntries = Array.from(monthMap.values()).sort(
+    (a, b) => a.date.getTime() - b.date.getTime()
+  );
+
+  if (!sortedEntries.length) {
+    return [];
+  }
+
+  const start = new Date();
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+  start.setMonth(start.getMonth() - (months - 1));
+
+  let pointer = 0;
+  let latestValue: number | null = null;
+
+  while (
+    pointer < sortedEntries.length &&
+    sortedEntries[pointer].date.getTime() < start.getTime()
+  ) {
+    latestValue = sortedEntries[pointer].value;
+    pointer++;
+  }
+
+  const result: Array<{
+    date: number;
+    value: number;
+    formattedDate: string;
+    formattedValue: string;
+  }> = [];
+
+  for (let i = 0; i < months; i++) {
+    const monthDate = new Date(start);
+    monthDate.setMonth(start.getMonth() + i);
+
+    while (
+      pointer < sortedEntries.length &&
+      sortedEntries[pointer].date.getTime() <= monthDate.getTime()
+    ) {
+      latestValue = sortedEntries[pointer].value;
+      pointer++;
+    }
+
+    if (latestValue == null) {
+      continue;
+    }
+
+    result.push({
+      date: monthDate.getTime(),
+      value: latestValue,
+      formattedDate: formatMonthYear(monthDate),
+      formattedValue: formatCurrency(latestValue),
+    });
+  }
+
+  return result;
+};
 
 const DashboardPage: React.FC = () => {
   const [assetControls, setAssetControls] = useState<AssetControl[]>([]);
@@ -79,9 +245,7 @@ const DashboardPage: React.FC = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [viewMode, setViewMode] = useState<'chart' | 'table'>('chart');
+  const [viewMode, setViewMode] = useState<ChartViewKey>('overall');
   const theme = useTheme();
 
   const loadAssetControls = async () => {
@@ -131,95 +295,22 @@ const DashboardPage: React.FC = () => {
     loadAssetControls();
   };
 
-  const handleChangePage = (_event: unknown, newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
-
-  // Avoid a layout jump when reaching the last page with empty rows.
-  const emptyRows = page > 0 ? Math.max(0, (1 + page) * rowsPerPage - assetControls.length) : 0;
-
   const overallControls = useMemo(
     () => assetControls.filter((control) => !control.category),
     [assetControls]
   );
 
-  // Prepare chart data with quarterly peaks and current month
-  const chartData = useMemo(() => {
-    if (!overallControls.length) {
-      const currentValue = currentTotal?.current_total;
-      if (!currentValue) return [];
-      const now = new Date();
-      now.setDate(1);
-      now.setHours(0, 0, 0, 0);
-      return [{
-        date: now.getTime(),
-        value: currentValue,
-        formattedDate: formatMonthYear(now),
-        formattedValue: formatCurrency(currentValue),
-      }];
-    }
-
-    const quarterMap = new Map<string, { date: Date; value: number }>();
-
-    overallControls.forEach((control) => {
-      const controlDate = new Date(control.controlDate);
-      if (Number.isNaN(controlDate.getTime())) return;
-      const quarterMonth = Math.floor(controlDate.getMonth() / 3) * 3;
-      const quarterStart = new Date(controlDate.getFullYear(), quarterMonth, 1);
-      const key = `${quarterStart.getFullYear()}-${quarterStart.getMonth()}`;
-      const existing = quarterMap.get(key);
-
-      if (!existing || control.currentTotalValue > existing.value) {
-        quarterMap.set(key, { date: quarterStart, value: control.currentTotalValue });
-      }
+  const categoryControlMap = useMemo(() => {
+    const map = new Map<Asset['category'], AssetControl[]>();
+    assetControls.forEach((control) => {
+      if (!control.category) return;
+      const categoryKey = control.category as Asset['category'];
+      const list = map.get(categoryKey) ?? [];
+      list.push(control);
+      map.set(categoryKey, list);
     });
-
-    const quarterlyData = Array.from(quarterMap.values())
-      .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .map(({ date, value }) => ({
-        date: date.getTime(),
-        value,
-        formattedDate: formatMonthYear(date),
-        formattedValue: formatCurrency(value),
-      }));
-
-    const currentValue =
-      currentTotal?.current_total ?? overallControls[overallControls.length - 1]?.currentTotalValue;
-
-    if (currentValue) {
-      const now = new Date();
-      now.setDate(1);
-      now.setHours(0, 0, 0, 0);
-      const lastPoint = quarterlyData[quarterlyData.length - 1];
-      const isSameMonth =
-        lastPoint &&
-        new Date(lastPoint.date).getFullYear() === now.getFullYear() &&
-        new Date(lastPoint.date).getMonth() === now.getMonth();
-
-      if (isSameMonth) {
-        quarterlyData[quarterlyData.length - 1] = {
-          date: now.getTime(),
-          value: currentValue,
-          formattedDate: formatMonthYear(now),
-          formattedValue: formatCurrency(currentValue),
-        };
-      } else {
-        quarterlyData.push({
-          date: now.getTime(),
-          value: currentValue,
-          formattedDate: formatMonthYear(now),
-          formattedValue: formatCurrency(currentValue),
-        });
-      }
-    }
-
-    return quarterlyData;
-  }, [overallControls, currentTotal]);
+    return map;
+  }, [assetControls]);
 
   // Calculate total value and growth
   const { totalValue, growth } = useMemo(() => {
@@ -273,20 +364,50 @@ const DashboardPage: React.FC = () => {
     return new Map(categoryDistribution.map((item) => [item.category, item.rawValue]));
   }, [categoryDistribution]);
 
+  const viewRecords = useMemo(() => {
+    const config = CHART_VIEWS[viewMode];
+    if (config.category) {
+      return categoryControlMap.get(config.category) ?? [];
+    }
+    return overallControls;
+  }, [viewMode, categoryControlMap, overallControls]);
+
+  const fallbackValue = useMemo(() => {
+    const config = CHART_VIEWS[viewMode];
+    if (config.category) {
+      return (
+        categoryDistributionMap.get(config.category) ??
+        (viewRecords.length
+          ? viewRecords[viewRecords.length - 1].currentTotalValue
+          : null)
+      );
+    }
+    return (
+      currentTotal?.current_total ??
+      (viewRecords.length
+        ? viewRecords[viewRecords.length - 1].currentTotalValue
+        : null)
+    );
+  }, [viewMode, categoryDistributionMap, currentTotal, viewRecords]);
+
+  const chartData = useMemo(() => {
+    if (viewMode === 'overall') {
+      return buildQuarterlySeries(viewRecords, fallbackValue);
+    }
+    return buildMonthlySeries(viewRecords, fallbackValue, 12);
+  }, [viewMode, viewRecords, fallbackValue]);
+
+  const currentChartConfig = CHART_VIEWS[viewMode];
+  const chartGradientId = `colorValue-${viewMode}`;
+  const chartViewEntries = Object.entries(CHART_VIEWS) as Array<
+    [ChartViewKey, (typeof CHART_VIEWS)[ChartViewKey]]
+  >;
+
   const topCategory = categoryDistribution[0];
 
   const categoryPerformance = useMemo(() => {
-    const categoryEntries = new Map<string, AssetControl[]>();
-
-    assetControls.forEach((control) => {
-      if (!control.category) return;
-      const list = categoryEntries.get(control.category) ?? [];
-      list.push(control);
-      categoryEntries.set(control.category, list);
-    });
-
     return PERFORMANCE_CATEGORIES.map(({ key, label }) => {
-      const entries = categoryEntries.get(key);
+      const entries = categoryControlMap.get(key);
       if (!entries || entries.length === 0) {
         const fallbackValue = categoryDistributionMap.get(key) ?? null;
         return { key, label, percentChange: null, currentValue: fallbackValue };
@@ -342,7 +463,7 @@ const DashboardPage: React.FC = () => {
 
       return { key, label, percentChange, currentValue };
     });
-  }, [assetControls, categoryDistributionMap]);
+  }, [categoryControlMap, categoryDistributionMap]);
 
   return (
     <Container maxWidth="xl" sx={{ py: 3, position: 'relative' }}>
@@ -537,8 +658,8 @@ const DashboardPage: React.FC = () => {
             </Grid>
           )}
 
-          {/* Alternar entre Gráfico/Tabela */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          {/* Alternar entre visões do gráfico */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
             <Typography variant="h6">Desempenho dos Ativos</Typography>
             <ToggleButtonGroup
               color="primary"
@@ -547,112 +668,83 @@ const DashboardPage: React.FC = () => {
               onChange={(_e, newView) => newView && setViewMode(newView)}
               size="small"
             >
-              <ToggleButton value="chart" aria-label="visualização de gráfico">
-                <ShowChartIcon sx={{ mr: 1 }} /> Gráfico
-              </ToggleButton>
-              <ToggleButton value="table" aria-label="visualização de tabela">
-                <TableChartIcon sx={{ mr: 1 }} /> Tabela
-              </ToggleButton>
+              {chartViewEntries.map(([key, config]) => (
+                <ToggleButton
+                  key={key}
+                  value={key}
+                  aria-label={`visualização ${config.label}`}
+                  sx={{
+                    textTransform: 'none',
+                    color: viewMode === key ? config.color : 'inherit',
+                    '&.Mui-selected': {
+                      backgroundColor: 'action.selected',
+                      color: config.color,
+                    },
+                  }}
+                >
+                  <ShowChartIcon sx={{ mr: 1 }} /> {config.label}
+                </ToggleButton>
+              ))}
             </ToggleButtonGroup>
           </Box>
 
           {/* Main Content */}
           <Card elevation={2} sx={{ mb: 3 }}>
-            {viewMode === 'chart' ? (
-              <Box sx={{ p: 3, height: '500px', width: '100%' }}>
-                <ResponsiveContainer width="100%" height={400}>
-                  <AreaChart
-                    data={chartData}
-                    margin={{ top: 20, right: 30, left: 10, bottom: 20 }}
-                  >
-                    <defs>
-                      <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={theme.palette.primary.main} stopOpacity={0.8} />
-                        <stop offset="95%" stopColor={theme.palette.primary.main} stopOpacity={0.1} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
-                    <XAxis
-                      dataKey="date"
-                      tickFormatter={(timestamp) => formatMonthYear(new Date(timestamp))}
-                      tick={{ fill: theme.palette.text.secondary, fontSize: 12 }}
-                      minTickGap={80}
-                      interval="preserveStartEnd"
-                      tickMargin={10}
-                    />
-                    <YAxis
-                      tickFormatter={(value: number) => formatCurrency(value)}
-                      tick={{ fill: theme.palette.text.secondary, fontSize: 12 }}
-                      width={110}
-                      tickMargin={10}
-                      allowDecimals={false}
-                      domain={['auto', 'auto']}
-                      tickCount={8}
-                    />
-                    <RechartsTooltip
-                      formatter={(value: number) => formatCurrency(Number(value))}
-                      labelFormatter={(label) => formatMonthYear(new Date(label))}
-                      contentStyle={{
-                        backgroundColor: theme.palette.background.paper,
-                        borderColor: theme.palette.divider,
-                        borderRadius: theme.shape.borderRadius,
-                        boxShadow: theme.shadows[2],
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="value"
-                      stroke={theme.palette.primary.main}
-                      fillOpacity={1}
-                      fill="url(#colorValue)"
-                      activeDot={{ r: 8 }}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </Box>
-            ) : (
-              <>
-                <TableContainer sx={{ maxHeight: 'calc(100vh - 400px)' }}>
-                  <Table stickyHeader size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Data</TableCell>
-                        <TableCell align="right">Valor Total</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {assetControls
-                        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                        .map((control) => (
-                          <TableRow key={control.id} hover>
-                            <TableCell>{formatDate(control.controlDate)}</TableCell>
-                            <TableCell align="right">
-                              {formatCurrency(control.currentTotalValue)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      {emptyRows > 0 && (
-                        <TableRow style={{ height: 53 * emptyRows }}>
-                          <TableCell colSpan={2} />
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-                <TablePagination
-                  rowsPerPageOptions={[5, 10, 25]}
-                  component="div"
-                  count={assetControls.length}
-                  rowsPerPage={rowsPerPage}
-                  page={page}
-                  onPageChange={handleChangePage}
-                  onRowsPerPageChange={handleChangeRowsPerPage}
-                  labelRowsPerPage="Linhas por página:"
-                  labelDisplayedRows={({ from, to, count }) => 
-                    `${from}-${to} de ${count !== -1 ? count : `mais de ${to}`}`
-                  }
-                />
-              </>
+            <Box sx={{ p: 3, height: '500px', width: '100%' }}>
+              <ResponsiveContainer width="100%" height={400}>
+                <AreaChart
+                  data={chartData}
+                  margin={{ top: 20, right: 30, left: 10, bottom: 20 }}
+                >
+                  <defs>
+                    <linearGradient id={chartGradientId} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={currentChartConfig.color} stopOpacity={0.8} />
+                      <stop offset="95%" stopColor={currentChartConfig.color} stopOpacity={0.1} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(timestamp) => formatMonthYear(new Date(timestamp))}
+                    tick={{ fill: theme.palette.text.secondary, fontSize: 12 }}
+                    minTickGap={80}
+                    interval="preserveStartEnd"
+                    tickMargin={10}
+                  />
+                  <YAxis
+                    tickFormatter={(value: number) => formatCurrency(value)}
+                    tick={{ fill: theme.palette.text.secondary, fontSize: 12 }}
+                    width={110}
+                    tickMargin={10}
+                    allowDecimals={false}
+                    domain={['auto', 'auto']}
+                    tickCount={8}
+                  />
+                  <RechartsTooltip
+                    formatter={(value: number) => formatCurrency(Number(value))}
+                    labelFormatter={(label) => formatMonthYear(new Date(label))}
+                    contentStyle={{
+                      backgroundColor: theme.palette.background.paper,
+                      borderColor: theme.palette.divider,
+                      borderRadius: theme.shape.borderRadius,
+                      boxShadow: theme.shadows[2],
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke={currentChartConfig.color}
+                    fillOpacity={1}
+                    fill={`url(#${chartGradientId})`}
+                    activeDot={{ r: 8 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </Box>
+            {viewMode !== 'overall' && (
+              <Typography variant="caption" color="text.secondary" sx={{ px: 3, pb: 3 }}>
+                * Dados referentes aos últimos 12 meses.
+              </Typography>
             )}
           </Card>
         </>
