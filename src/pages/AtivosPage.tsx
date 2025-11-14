@@ -131,6 +131,7 @@ const AtivosPage: React.FC = () => {
   };
 
   const handleSaveAsset = async (assetData: any) => {
+    const categoryForControl = assetData?.category || editingAsset?.category || null;
     try {
       setLoading(true);
       if (editingAsset) {
@@ -141,20 +142,20 @@ const AtivosPage: React.FC = () => {
         await createAsset(assetData, username);
       }
       
+      setFormOpen(false);
+      setEditingAsset(null);
+
       // Trigger asset control update after successful save/update
       try {
         await triggerAssetControl(username);
-        const categoryId = assetData?.category || editingAsset?.category;
-        if (categoryId) {
-          await triggerAssetControlByCategory(username, categoryId);
+        if (categoryForControl) {
+          await triggerAssetControlByCategory(username, categoryForControl);
         }
       } catch (err) {
         console.warn('Warning: Could not update asset control', err);
         // Don't fail the whole operation if asset control update fails
       }
       
-      setFormOpen(false);
-      setEditingAsset(null);
       await loadAssets();
     } catch (err) {
       setError('Falha ao salvar o ativo. Tente novamente.');
