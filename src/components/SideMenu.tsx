@@ -18,6 +18,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import LogoutIcon from '@mui/icons-material/Logout';
+import SettingsIcon from '@mui/icons-material/Settings';
 import MenuOpenIcon from '@mui/icons-material/MenuOpen';
 import MenuIcon from '@mui/icons-material/Menu';
 
@@ -54,6 +55,12 @@ const SideMenu: React.FC<SideMenuProps> = ({ onLogout, isExpanded, onToggleDrawe
       path: '/assessor',
       onClick: () => navigate('/assessor')
     },
+    {
+      text: 'Configurações',
+      icon: <SettingsIcon />,
+      path: '/configuracoes',
+      onClick: () => navigate('/configuracoes'),
+    }
   ];
 
   const renderListItem = (item: typeof menuItems[number]) => {

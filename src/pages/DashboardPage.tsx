@@ -18,6 +18,7 @@ import { fetchAssetControls, fetchCurrentTotal } from '../api/assetControl';
 import type { AssetControl, CurrentTotal } from '../api/assetControl';
 import { fetchAssets } from '../api/assets';
 import type { Asset } from '../api/assets';
+import { useSettings } from '../context/SettingsContext';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import { formatCurrency, formatDate } from '../utils/formatters';
@@ -247,6 +248,20 @@ const DashboardPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ChartViewKey>('overall');
   const theme = useTheme();
+  const { settings } = useSettings();
+
+  const hiddenCategories = useMemo(() => {
+    const set = new Set<Asset['category']>();
+    if (settings.hideImoveis) set.add('IMOVEIS');
+    if (settings.hideCarros) set.add('CARROS');
+    return set;
+  }, [settings.hideImoveis, settings.hideCarros]);
+
+  const hiddenCategoryNames = useMemo(() => {
+    return Array.from(hiddenCategories).map(
+      (category) => CATEGORY_LABELS[category] ?? category
+    );
+  }, [hiddenCategories]);
 
   const loadAssetControls = async () => {
     setLoading(true);
@@ -364,6 +379,33 @@ const DashboardPage: React.FC = () => {
     return new Map(categoryDistribution.map((item) => [item.category, item.rawValue]));
   }, [categoryDistribution]);
 
+  const hiddenValueSum = useMemo(() => {
+    let sum = 0;
+    hiddenCategories.forEach((category) => {
+      sum += categoryDistributionMap.get(category) ?? 0;
+    });
+    return sum;
+  }, [hiddenCategories, categoryDistributionMap]);
+
+  const displayTotalValue = useMemo(
+    () => Math.max(totalValue - hiddenValueSum, 0),
+    [totalValue, hiddenValueSum]
+  );
+
+  const visibleCategoryDistribution = useMemo(() => {
+    const visible = categoryDistribution.filter(
+      (item) => !hiddenCategories.has(item.category)
+    );
+    const visibleTotal = visible.reduce((acc, item) => acc + item.rawValue, 0);
+    if (visibleTotal <= 0) {
+      return [];
+    }
+    return visible.map((item) => ({
+      ...item,
+      percent: Number(((item.rawValue / visibleTotal) * 100).toFixed(2)),
+    }));
+  }, [categoryDistribution, hiddenCategories]);
+
   const viewRecords = useMemo(() => {
     const config = CHART_VIEWS[viewMode];
     if (config.category) {
@@ -402,6 +444,21 @@ const DashboardPage: React.FC = () => {
   const chartViewEntries = Object.entries(CHART_VIEWS) as Array<
     [ChartViewKey, (typeof CHART_VIEWS)[ChartViewKey]]
   >;
+  const hiddenCategoriesNote = useMemo(() => {
+    if (!hiddenCategoryNames.length) return null;
+    let formatted = hiddenCategoryNames[0];
+    const plural = hiddenCategoryNames.length > 1;
+    if (plural) {
+      const allButLast = hiddenCategoryNames.slice(0, -1).join(', ');
+      const last = hiddenCategoryNames[hiddenCategoryNames.length - 1];
+      formatted = `${allButLast} e ${last}`;
+    }
+    const noun = plural ? 'das categorias' : 'da categoria';
+    return `* Este gráfico inclui também os valores ${noun} ${formatted}.`;
+  }, [hiddenCategoryNames]);
+
+  const showHiddenCategoriesNote =
+    viewMode === 'overall' && Boolean(hiddenCategoriesNote);
 
   const topCategory = categoryDistribution[0];
 
@@ -503,7 +560,7 @@ const DashboardPage: React.FC = () => {
                     Valor Total
                   </Typography>
                   <Typography variant="h4" component="div" sx={{ fontWeight: 'bold' }}>
-                    {formatCurrency(totalValue)}
+                    {formatCurrency(displayTotalValue)}
                   </Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
                     <Typography
@@ -562,7 +619,7 @@ const DashboardPage: React.FC = () => {
             )}
           </Grid>
 
-          {categoryDistribution.length > 0 && (
+          {visibleCategoryDistribution.length > 0 && (
             <Grid container spacing={3} sx={{ mb: 3 }}>
               <Grid size={{ xs: 12, lg: 8 }}>
                 <Card elevation={2} sx={{ height: '100%' }}>
@@ -577,7 +634,7 @@ const DashboardPage: React.FC = () => {
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
-                            data={categoryDistribution}
+                            data={visibleCategoryDistribution}
                             dataKey="percent"
                             nameKey="name"
                             innerRadius={70}
@@ -589,7 +646,7 @@ const DashboardPage: React.FC = () => {
                               return `${pct.toFixed(1)}%`;
                             }}
                           >
-                            {categoryDistribution.map((entry) => (
+                            {visibleCategoryDistribution.map((entry) => (
                               <Cell
                                 key={entry.category}
                                 fill={CATEGORY_COLORS[entry.category]}
@@ -784,6 +841,11 @@ const DashboardPage: React.FC = () => {
                 </AreaChart>
               </ResponsiveContainer>
             </Box>
+            {showHiddenCategoriesNote && hiddenCategoriesNote && (
+              <Typography variant="caption" color="text.secondary" sx={{ px: 3, pb: viewMode === 'overall' ? 1 : 0 }}>
+                {hiddenCategoriesNote}
+              </Typography>
+            )}
             {viewMode !== 'overall' && (
               <Typography variant="caption" color="text.secondary" sx={{ px: 3, pb: 3 }}>
                 * Dados referentes aos últimos 12 meses.

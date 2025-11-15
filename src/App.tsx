@@ -5,9 +5,11 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AtivosPage from './pages/AtivosPage';
 import AssessorPage from './pages/AssessorPage';
+import SettingsPage from './pages/SettingsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import SideMenu from './components/SideMenu';
 import { useState, useCallback } from 'react';
+import { SettingsProvider } from './context/SettingsContext';
 
 const expandedDrawerWidth = 240;
 const collapsedDrawerWidth = 72;
@@ -110,6 +112,11 @@ const AppContent = () => {
               <AssessorPage />
             </ProtectedRoute>
           } />
+          <Route path="/configuracoes" element={
+            <ProtectedRoute>
+              <SettingsPage />
+            </ProtectedRoute>
+          } />
           <Route path="*" element={<Navigate to="/dashboard" />} />
         </Routes>
       </Box>
@@ -119,12 +126,14 @@ const AppContent = () => {
 
 const App = () => {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Router>
-        <AppContent />
-      </Router>
-    </ThemeProvider>
+    <SettingsProvider>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Router>
+          <AppContent />
+        </Router>
+      </ThemeProvider>
+    </SettingsProvider>
   );
 };
 
