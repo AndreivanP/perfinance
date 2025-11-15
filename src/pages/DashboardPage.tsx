@@ -410,7 +410,7 @@ const DashboardPage: React.FC = () => {
       const entries = categoryControlMap.get(key);
       if (!entries || entries.length === 0) {
         const fallbackValue = categoryDistributionMap.get(key) ?? null;
-        return { key, label, percentChange: null, currentValue: fallbackValue };
+        return { key, label, percentChange: null, currentValue: fallbackValue, deltaValue: null };
       }
 
       const sortedEntries = entries
@@ -445,23 +445,25 @@ const DashboardPage: React.FC = () => {
 
       if (!monthlySeries.length) {
         const fallbackValue = categoryDistributionMap.get(key) ?? null;
-        return { key, label, percentChange: null, currentValue: fallbackValue };
+        return { key, label, percentChange: null, currentValue: fallbackValue, deltaValue: null };
       }
 
       const currentMonth = monthlySeries[monthlySeries.length - 1];
       const previousMonth = monthlySeries[monthlySeries.length - 2];
 
       let percentChange: number | null = null;
-      if (previousMonth && previousMonth.value !== 0) {
-        percentChange =
-          ((currentMonth.value - previousMonth.value) / previousMonth.value) *
-          100;
+      let deltaValue: number | null = null;
+      if (previousMonth) {
+        deltaValue = currentMonth.value - previousMonth.value;
+        if (previousMonth.value !== 0) {
+          percentChange = (deltaValue / previousMonth.value) * 100;
+        }
       }
 
       const currentValue =
         categoryDistributionMap.get(key) ?? currentMonth.value ?? null;
 
-      return { key, label, percentChange, currentValue };
+      return { key, label, percentChange, currentValue, deltaValue };
     });
   }, [categoryControlMap, categoryDistributionMap]);
 
@@ -615,33 +617,73 @@ const DashboardPage: React.FC = () => {
               </Grid>
               <Grid size={{ xs: 12, lg: 4 }}>
                 <Grid container spacing={3}>
-                  {categoryPerformance.map(({ key, label, percentChange, currentValue }) => (
+                  {categoryPerformance.map(({ key, label, percentChange, currentValue, deltaValue }) => {
+                    const percentColor =
+                      typeof percentChange === 'number'
+                        ? percentChange > 0
+                          ? 'success.main'
+                          : percentChange < 0
+                            ? 'error.main'
+                            : 'text.primary'
+                        : 'text.primary';
+
+                    const deltaColor =
+                      typeof deltaValue === 'number'
+                        ? deltaValue > 0
+                          ? 'success.main'
+                          : deltaValue < 0
+                            ? 'error.main'
+                            : 'text.secondary'
+                        : 'text.secondary';
+
+                    return (
                     <Grid key={key} size={{ xs: 12 }}>
                       <Card elevation={2}>
                         <CardContent>
                           <Typography color="text.secondary" gutterBottom>
                             {label}
                           </Typography>
-                          <Typography
-                            variant="h4"
-                            sx={{
-                              fontWeight: 'bold',
-                              color:
-                                typeof percentChange === 'number'
-                                  ? percentChange > 0
-                                    ? 'success.main'
-                                    : percentChange < 0
-                                      ? 'error.main'
-                                      : 'text.primary'
-                                  : 'text.primary'
-                            }}
-                          >
-                            {typeof percentChange === 'number'
-                              ? `${percentChange >= 0 ? '↑' : '↓'} ${Math.abs(percentChange).toFixed(2)}%`
-                              : currentValue != null
-                                ? formatCurrency(currentValue)
-                                : '-'}
-                          </Typography>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2 }}>
+                            <Typography
+                              variant="h4"
+                              sx={{
+                                fontWeight: 'bold',
+                                color: percentColor,
+                              }}
+                            >
+                              {typeof percentChange === 'number'
+                                ? `${percentChange >= 0 ? '↑' : '↓'} ${Math.abs(percentChange).toFixed(2)}%`
+                                : currentValue != null
+                                  ? formatCurrency(currentValue)
+                                  : '-'}
+                            </Typography>
+                            <Box sx={{ textAlign: 'right' }}>
+                              {typeof percentChange === 'number' ? (
+                                <>
+                                  <Typography
+                                    variant="subtitle2"
+                                    sx={{ fontWeight: 600, color: deltaColor }}
+                                  >
+                                    {typeof deltaValue === 'number' && deltaValue !== 0
+                                      ? `${deltaValue > 0 ? '+' : '-'} ${formatCurrency(Math.abs(deltaValue))}`
+                                      : formatCurrency(currentValue ?? 0)}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Diferença mensal
+                                  </Typography>
+                                </>
+                              ) : currentValue != null ? (
+                                <>
+                                  <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                    {formatCurrency(currentValue)}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Valor atual
+                                  </Typography>
+                                </>
+                              ) : null}
+                            </Box>
+                          </Box>
                           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                             {typeof percentChange === 'number'
                               ? `Atual: ${formatCurrency(currentValue ?? 0)}`
@@ -652,7 +694,8 @@ const DashboardPage: React.FC = () => {
                         </CardContent>
                       </Card>
                     </Grid>
-                  ))}
+                    );
+                  })}
                 </Grid>
               </Grid>
             </Grid>
