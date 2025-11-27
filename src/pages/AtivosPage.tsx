@@ -337,7 +337,6 @@ const AtivosPage: React.FC = () => {
                       <span>Ativo</span>
                       <IconButton
                         size="small"
-                        color={filters.expiry ? 'primary' : 'default'}
                         color={filters.name ? 'primary' : 'default'}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -354,7 +353,6 @@ const AtivosPage: React.FC = () => {
                       <span>Valor Atual</span>
                       <IconButton
                         size="small"
-                        color={filters.category ? 'primary' : 'default'}
                         color={filters.value ? 'primary' : 'default'}
                         onClick={(e) => {
                           e.stopPropagation();
