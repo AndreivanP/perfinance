@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -20,10 +20,13 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
+  TextField,
+  Popover,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import { fetchAssets, deleteAsset, createAsset, updateAsset } from '../api/assets';
 import { triggerAssetControl, triggerAssetControlByCategory } from '../api/assetControl';
 import type { Asset } from '../api/assets';
@@ -51,6 +54,46 @@ const AtivosPage: React.FC = () => {
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [assetToDelete, setAssetToDelete] = useState<string | null>(null);
+  const [filters, setFilters] = useState({
+    name: '',
+    value: '',
+    company: '',
+    expiry: '',
+    category: '',
+  });
+  const [filterVisibility, setFilterVisibility] = useState({
+    name: false,
+    value: false,
+    company: false,
+    expiry: false,
+    category: false,
+  });
+  const [filterAnchors, setFilterAnchors] = useState<{
+    name: HTMLElement | null;
+    value: HTMLElement | null;
+    company: HTMLElement | null;
+    expiry: HTMLElement | null;
+    category: HTMLElement | null;
+  }>({
+    name: null,
+    value: null,
+    company: null,
+    expiry: null,
+    category: null,
+  });
+  const filterInputRefs = useRef<{
+    name: HTMLInputElement | null;
+    value: HTMLInputElement | null;
+    company: HTMLInputElement | null;
+    expiry: HTMLInputElement | null;
+    category: HTMLInputElement | null;
+  }>({
+    name: null,
+    value: null,
+    company: null,
+    expiry: null,
+    category: null,
+  });
 
   const username = 'Andreivan'; // This should ideally come from auth context or user store
 
@@ -129,6 +172,68 @@ const AtivosPage: React.FC = () => {
     setEditingAsset(asset);
     setFormOpen(true);
   };
+
+  const focusFilterInput = (key: keyof typeof filterVisibility) => {
+    requestAnimationFrame(() => {
+      filterInputRefs.current[key]?.focus();
+    });
+  };
+
+  const openFilter = (key: keyof typeof filterVisibility, anchor: HTMLElement) => {
+    setFilterVisibility((prev) => ({ ...prev, [key]: true }));
+    setFilterAnchors((prev) => ({ ...prev, [key]: anchor }));
+    focusFilterInput(key);
+  };
+
+  const closeFilter = (key: keyof typeof filterVisibility) => {
+    setFilterVisibility((prev) => ({ ...prev, [key]: false }));
+    setFilterAnchors((prev) => ({ ...prev, [key]: null }));
+  };
+
+  const toggleFilterVisibility = (key: keyof typeof filterVisibility, anchor: HTMLElement) => {
+    if (filterVisibility[key]) {
+      closeFilter(key);
+    } else {
+      openFilter(key, anchor);
+    }
+  };
+
+  const handleFilterChange = (key: keyof typeof filters, value: string) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+    setPage(0);
+  };
+
+  const filteredAssets = useMemo(() => {
+    return assets.filter((asset) => {
+      const matchesName = asset.name.toLowerCase().includes(filters.name.toLowerCase());
+      const matchesCompany = asset.company.toLowerCase().includes(filters.company.toLowerCase());
+      const matchesCategory = (CATEGORY_LABELS[asset.category] || asset.category)
+        .toLowerCase()
+        .includes(filters.category.toLowerCase());
+      const matchesExpiry = asset.expiryDate
+        ? formatDate(asset.expiryDate).toLowerCase().includes(filters.expiry.toLowerCase())
+        : filters.expiry.trim() === '' || '-'.includes(filters.expiry.toLowerCase());
+      const valueStr = String(asset.current_value ?? '').replace(/\./g, ',');
+      const matchesValue = valueStr.toLowerCase().includes(filters.value.toLowerCase());
+      return matchesName && matchesCompany && matchesCategory && matchesExpiry && matchesValue;
+    });
+  }, [assets, filters]);
+
+  const paginatedAssets = useMemo(
+    () => filteredAssets.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
+    [filteredAssets, page, rowsPerPage]
+  );
+
+  const totalFilteredValue = useMemo(
+    () => filteredAssets.reduce((acc, asset) => acc + (asset.current_value ?? 0), 0),
+    [filteredAssets]
+  );
+
+  const showTotalRow = useMemo(() => {
+    if (filteredAssets.length === 0) return false;
+    const lastPage = Math.max(0, Math.ceil(filteredAssets.length / rowsPerPage) - 1);
+    return page === lastPage;
+  }, [filteredAssets.length, page, rowsPerPage]);
 
   const handleSaveAsset = async (assetData: any) => {
     const categoryForControl = assetData?.category || editingAsset?.category || null;
@@ -227,18 +332,212 @@ const AtivosPage: React.FC = () => {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Ativo</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Valor Atual</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Corretora</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Data de Vencimento</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>Categoria</TableCell>
-                  <TableCell align="right"></TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Ativo</span>
+                      <IconButton
+                        size="small"
+                        color={filters.expiry ? 'primary' : 'default'}
+                        color={filters.name ? 'primary' : 'default'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFilterVisibility('name', e.currentTarget);
+                        }}
+                        aria-label="Filtrar ativo"
+                      >
+                        <FilterListIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1rem' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+                      <span>Valor Atual</span>
+                      <IconButton
+                        size="small"
+                        color={filters.category ? 'primary' : 'default'}
+                        color={filters.value ? 'primary' : 'default'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFilterVisibility('value', e.currentTarget);
+                        }}
+                        aria-label="Filtrar valor"
+                      >
+                        <FilterListIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Corretora</span>
+                      <IconButton
+                        size="small"
+                        color={filters.company ? 'primary' : 'default'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFilterVisibility('company', e.currentTarget);
+                        }}
+                        aria-label="Filtrar corretora"
+                      >
+                        <FilterListIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Data de Vencimento</span>
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFilterVisibility('expiry', e.currentTarget);
+                        }}
+                        aria-label="Filtrar data de vencimento"
+                      >
+                        <FilterListIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Categoria</span>
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFilterVisibility('category', e.currentTarget);
+                        }}
+                        aria-label="Filtrar categoria"
+                      >
+                        <FilterListIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </TableCell>
+                  <TableCell align="right" />
                 </TableRow>
               </TableHead>
+              <Popover
+                open={filterVisibility.name}
+                anchorEl={filterAnchors.name}
+                onClose={() => closeFilter('name')}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+              >
+                <Box sx={{ p: 1.5, minWidth: 220 }}>
+                  <TextField
+                    size="small"
+                    label="Filtrar ativo"
+                    value={filters.name}
+                    onChange={(e) => handleFilterChange('name', e.target.value)}
+                    fullWidth
+                    inputRef={(el) => { filterInputRefs.current.name = el; }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        closeFilter('name');
+                      }
+                    }}
+                  />
+                </Box>
+              </Popover>
+              <Popover
+                open={filterVisibility.value}
+                anchorEl={filterAnchors.value}
+                onClose={() => closeFilter('value')}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              >
+                <Box sx={{ p: 1.5, minWidth: 220 }}>
+                  <TextField
+                    size="small"
+                    label="Filtrar valor"
+                    value={filters.value}
+                    onChange={(e) => handleFilterChange('value', e.target.value)}
+                    fullWidth
+                    inputProps={{ style: { textAlign: 'right' } }}
+                    inputRef={(el) => { filterInputRefs.current.value = el; }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        closeFilter('value');
+                      }
+                    }}
+                  />
+                </Box>
+              </Popover>
+              <Popover
+                open={filterVisibility.company}
+                anchorEl={filterAnchors.company}
+                onClose={() => closeFilter('company')}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+              >
+                <Box sx={{ p: 1.5, minWidth: 220 }}>
+                  <TextField
+                    size="small"
+                    label="Filtrar corretora"
+                    value={filters.company}
+                    onChange={(e) => handleFilterChange('company', e.target.value)}
+                    fullWidth
+                    inputRef={(el) => { filterInputRefs.current.company = el; }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        closeFilter('company');
+                      }
+                    }}
+                  />
+                </Box>
+              </Popover>
+              <Popover
+                open={filterVisibility.expiry}
+                anchorEl={filterAnchors.expiry}
+                onClose={() => closeFilter('expiry')}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+              >
+                <Box sx={{ p: 1.5, minWidth: 220 }}>
+                  <TextField
+                    size="small"
+                    label="Filtrar vencimento"
+                    value={filters.expiry}
+                    onChange={(e) => handleFilterChange('expiry', e.target.value)}
+                    fullWidth
+                    inputRef={(el) => { filterInputRefs.current.expiry = el; }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        closeFilter('expiry');
+                      }
+                    }}
+                  />
+                </Box>
+              </Popover>
+              <Popover
+                open={filterVisibility.category}
+                anchorEl={filterAnchors.category}
+                onClose={() => closeFilter('category')}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+              >
+                <Box sx={{ p: 1.5, minWidth: 220 }}>
+                  <TextField
+                    size="small"
+                    label="Filtrar categoria"
+                    value={filters.category}
+                    onChange={(e) => handleFilterChange('category', e.target.value)}
+                    fullWidth
+                    inputRef={(el) => { filterInputRefs.current.category = el; }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        closeFilter('category');
+                      }
+                    }}
+                  />
+                </Box>
+              </Popover>
               <TableBody>
-                {assets
-                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                  .map((asset) => (
+                {paginatedAssets.map((asset) => (
                     <TableRow key={asset.id} hover>
                       <TableCell>{asset.name}</TableCell>
                       <TableCell align="right">{formatCurrency(asset.current_value)}</TableCell>
@@ -267,6 +566,17 @@ const AtivosPage: React.FC = () => {
                       </TableCell>
                     </TableRow>
                   ))}
+                {showTotalRow && (
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 'bold' }} colSpan={1}>
+                      Total
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                      {formatCurrency(totalFilteredValue)}
+                    </TableCell>
+                    <TableCell colSpan={4} />
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </TableContainer>
@@ -274,7 +584,7 @@ const AtivosPage: React.FC = () => {
           <TablePagination
             rowsPerPageOptions={[5, 10, 25]}
             component="div"
-            count={assets.length}
+            count={filteredAssets.length}
             rowsPerPage={rowsPerPage}
             page={page}
             onPageChange={handleChangePage}
