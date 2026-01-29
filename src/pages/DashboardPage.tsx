@@ -90,13 +90,14 @@ const buildQuarterlySeries = (
       {
         date: now.getTime(),
         value: fallbackValue,
+        timestamp: now.getTime(),
         formattedDate: formatMonthYear(now),
         formattedValue: formatCurrency(fallbackValue),
       },
     ];
   }
 
-  const quarterMap = new Map<string, { date: Date; value: number }>();
+  const quarterMap = new Map<string, { date: Date; value: number; timestamp: number }>();
 
   records.forEach((control) => {
     const controlDate = new Date(control.controlDate);
@@ -106,13 +107,17 @@ const buildQuarterlySeries = (
     const key = `${quarterStart.getFullYear()}-${quarterStart.getMonth()}`;
     const existing = quarterMap.get(key);
 
-    if (!existing || control.currentTotalValue > existing.value) {
-      quarterMap.set(key, { date: quarterStart, value: control.currentTotalValue });
+    if (!existing || controlDate.getTime() > existing.timestamp) {
+      quarterMap.set(key, {
+        date: quarterStart,
+        value: control.currentTotalValue,
+        timestamp: controlDate.getTime(),
+      });
     }
   });
 
   const quarterlyData = Array.from(quarterMap.values())
-    .sort((a, b) => a.date.getTime() - b.date.getTime())
+    .sort((a, b) => a.timestamp - b.timestamp)
     .map(({ date, value }) => ({
       date: date.getTime(),
       value,
@@ -158,7 +163,7 @@ const buildMonthlySeries = (
   fallbackValue: number | null | undefined,
   months = 12
 ) => {
-  const monthMap = new Map<string, { date: Date; value: number }>();
+  const monthMap = new Map<string, { date: Date; value: number; timestamp: number }>();
 
   records.forEach((control) => {
     const controlDate = new Date(control.controlDate);
@@ -168,8 +173,12 @@ const buildMonthlySeries = (
     const key = `${monthStart.getFullYear()}-${monthStart.getMonth()}`;
     const existing = monthMap.get(key);
 
-    if (!existing || control.currentTotalValue > existing.value) {
-      monthMap.set(key, { date: monthStart, value: control.currentTotalValue });
+    if (!existing || controlDate.getTime() > existing.timestamp) {
+      monthMap.set(key, {
+        date: monthStart,
+        value: control.currentTotalValue,
+        timestamp: controlDate.getTime(),
+      });
     }
   });
 
@@ -180,12 +189,16 @@ const buildMonthlySeries = (
     const currentKey = `${now.getFullYear()}-${now.getMonth()}`;
     const existing = monthMap.get(currentKey);
     if (!existing || fallbackValue > existing.value) {
-      monthMap.set(currentKey, { date: now, value: fallbackValue });
+      monthMap.set(currentKey, {
+        date: now,
+        value: fallbackValue,
+        timestamp: now.getTime(),
+      });
     }
   }
 
   const sortedEntries = Array.from(monthMap.values()).sort(
-    (a, b) => a.date.getTime() - b.date.getTime()
+    (a, b) => a.timestamp - b.timestamp
   );
 
   if (!sortedEntries.length) {
