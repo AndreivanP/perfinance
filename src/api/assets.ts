@@ -76,3 +76,46 @@ export const updateAsset = async (id: string, assetData: Partial<Asset>, usernam
 
   return response.data;
 };
+
+interface AssetTransactionPayload {
+  amount: number;
+}
+
+const postAssetTransaction = async (
+  id: string,
+  payload: AssetTransactionPayload,
+  username: string,
+  action: 'top-up' | 'withdraw'
+): Promise<void> => {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('No authentication token found');
+  }
+
+  await axios.post(
+    buildApiUrl(`/users/${encodeURIComponent(username)}/assets/${id}/${action}`),
+    payload,
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+};
+
+export const topUpAsset = async (
+  id: string,
+  amount: number,
+  username: string = 'Andreivan'
+): Promise<void> => {
+  return postAssetTransaction(id, { amount }, username, 'top-up');
+};
+
+export const withdrawAsset = async (
+  id: string,
+  amount: number,
+  username: string = 'Andreivan'
+): Promise<void> => {
+  return postAssetTransaction(id, { amount }, username, 'withdraw');
+};

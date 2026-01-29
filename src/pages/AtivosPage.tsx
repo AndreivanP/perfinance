@@ -27,10 +27,11 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import FilterListIcon from '@mui/icons-material/FilterList';
-import { fetchAssets, deleteAsset, createAsset, updateAsset } from '../api/assets';
+import { fetchAssets, deleteAsset, createAsset, updateAsset, topUpAsset, withdrawAsset } from '../api/assets';
 import { triggerAssetControl, triggerAssetControlByCategory } from '../api/assetControl';
 import type { Asset } from '../api/assets';
 import AssetForm from '../components/AssetForm';
+import AssetTransactionDialog, { type AssetTransactionType } from '../components/AssetTransactionDialog';
 import { formatCurrency, formatDate } from '../utils/formatters';
 
 // Map category values to their display labels
@@ -54,6 +55,7 @@ const AtivosPage: React.FC = () => {
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [assetToDelete, setAssetToDelete] = useState<string | null>(null);
+  const [transactionAsset, setTransactionAsset] = useState<Asset | null>(null);
   const [filters, setFilters] = useState({
     name: '',
     value: '',
@@ -173,6 +175,10 @@ const AtivosPage: React.FC = () => {
     setFormOpen(true);
   };
 
+  const handleTransaction = (asset: Asset) => {
+    setTransactionAsset(asset);
+  };
+
   const focusFilterInput = (key: keyof typeof filterVisibility) => {
     requestAnimationFrame(() => {
       filterInputRefs.current[key]?.focus();
@@ -270,6 +276,36 @@ const AtivosPage: React.FC = () => {
     }
   };
 
+  const handleTransactionSubmit = async (type: AssetTransactionType, amount: number) => {
+    if (!transactionAsset) return;
+    const assetId = transactionAsset.id;
+
+    try {
+      setLoading(true);
+      if (type === 'aporte') {
+        await topUpAsset(assetId, amount, username);
+      } else {
+        await withdrawAsset(assetId, amount, username);
+      }
+
+      try {
+        await triggerAssetControl(username);
+        await triggerAssetControlByCategory(username, transactionAsset.category);
+      } catch (err) {
+        console.warn('Warning: Could not update asset control after transaction', err);
+      }
+
+      await loadAssets();
+      setTransactionAsset(null);
+    } catch (err) {
+      setError('Falha ao salvar a transação. Tente novamente.');
+      console.error('Error performing transaction:', err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <AssetForm
@@ -277,6 +313,11 @@ const AtivosPage: React.FC = () => {
         onClose={() => setFormOpen(false)}
         onSave={handleSaveAsset}
         asset={editingAsset}
+      />
+      <AssetTransactionDialog
+        open={Boolean(transactionAsset)}
+        onClose={() => setTransactionAsset(null)}
+        onSubmit={handleTransactionSubmit}
       />
       <Box sx={{ 
         display: 'flex', 
@@ -550,6 +591,11 @@ const AtivosPage: React.FC = () => {
                         <Tooltip title="Editar">
                           <IconButton onClick={() => handleEditAsset(asset)} size="small">
                             <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Aporte/Resgate">
+                          <IconButton onClick={() => handleTransaction(asset)} size="small" color="primary">
+                            <AddIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                         <Tooltip title="Excluir">

@@ -18,6 +18,8 @@ import { fetchAssetControls, fetchCurrentTotal } from '../api/assetControl';
 import type { AssetControl, CurrentTotal } from '../api/assetControl';
 import { fetchAssets } from '../api/assets';
 import type { Asset } from '../api/assets';
+import { fetchTransactions } from '../api/transactions';
+import type { AssetTransaction } from '../api/transactions';
 import { useSettings } from '../context/SettingsContext';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
@@ -244,6 +246,7 @@ const DashboardPage: React.FC = () => {
   const [assetControls, setAssetControls] = useState<AssetControl[]>([]);
   const [currentTotal, setCurrentTotal] = useState<CurrentTotal | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [transactions, setTransactions] = useState<AssetTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ChartViewKey>('overall');
@@ -283,6 +286,70 @@ const DashboardPage: React.FC = () => {
       ]);
       setAssetControls(assetControlData);
       setAssets(assetsData);
+      try {
+        const monthsToFetch = new Set<string>();
+
+        PERFORMANCE_CATEGORIES.forEach(({ key }) => {
+          const categoryControls = assetControlData.filter(
+            (control) => control.category === key
+          );
+          if (!categoryControls.length) {
+            return;
+          }
+
+          const monthMap = new Map<
+            string,
+            { year: number; month: number; timestamp: number }
+          >();
+
+          categoryControls.forEach((control) => {
+            const parsed = new Date(control.controlDate);
+            if (Number.isNaN(parsed.getTime())) return;
+            const year = parsed.getFullYear();
+            const month = parsed.getMonth();
+            const monthKey = `${year}-${month}`;
+            const timestamp = parsed.getTime();
+            const existing = monthMap.get(monthKey);
+            if (!existing || timestamp > existing.timestamp) {
+              monthMap.set(monthKey, { year, month, timestamp });
+            }
+          });
+
+          const monthlyEntries = Array.from(monthMap.values()).sort(
+            (a, b) => a.timestamp - b.timestamp
+          );
+          monthlyEntries.slice(-2).forEach((entry) => {
+            monthsToFetch.add(`${entry.year}-${entry.month}`);
+          });
+        });
+
+        if (!monthsToFetch.size) {
+          const now = new Date();
+          monthsToFetch.add(`${now.getFullYear()}-${now.getMonth()}`);
+        }
+
+        const transactionResponses = await Promise.all(
+          Array.from(monthsToFetch).map(async (monthKey) => {
+            const [yearStr, monthStr] = monthKey.split('-');
+            const year = Number(yearStr);
+            const monthIndex = Number(monthStr);
+            if (Number.isNaN(year) || Number.isNaN(monthIndex)) {
+              return [];
+            }
+            try {
+              return await fetchTransactions(username, monthIndex + 1, year);
+            } catch (err) {
+              console.error('Erro ao carregar transações do mês', monthKey, err);
+              return [];
+            }
+          })
+        );
+
+        setTransactions(transactionResponses.flat());
+      } catch (transactionsErr) {
+        console.error('Erro inesperado ao processar transações:', transactionsErr);
+        setTransactions([]);
+      }
       
       // Fetch current total (optional - don't fail if this errors)
       try {
@@ -462,6 +529,19 @@ const DashboardPage: React.FC = () => {
 
   const topCategory = categoryDistribution[0];
 
+  const transactionNetByCategoryMonth = useMemo(() => {
+    const map = new Map<string, number>();
+    transactions.forEach((transaction) => {
+      const date = new Date(transaction.transactionDate);
+      if (Number.isNaN(date.getTime())) return;
+      const key = `${transaction.category}-${date.getFullYear()}-${date.getMonth()}`;
+      const current = map.get(key) ?? 0;
+      const amount = transaction.type === 'TOP_UP' ? transaction.amount : -transaction.amount;
+      map.set(key, current + amount);
+    });
+    return map;
+  }, [transactions]);
+
   const categoryPerformance = useMemo(() => {
     return PERFORMANCE_CATEGORIES.map(({ key, label }) => {
       const entries = categoryControlMap.get(key);
@@ -479,7 +559,7 @@ const DashboardPage: React.FC = () => {
 
       const monthMap = new Map<
         string,
-        { value: number; timestamp: number }
+        { value: number; timestamp: number; year: number; month: number }
       >();
 
       sortedEntries.forEach((entry) => {
@@ -492,6 +572,8 @@ const DashboardPage: React.FC = () => {
           monthMap.set(monthKey, {
             value: entry.currentTotalValue ?? 0,
             timestamp,
+            year: date.getFullYear(),
+            month: date.getMonth(),
           });
         }
       });
@@ -500,9 +582,10 @@ const DashboardPage: React.FC = () => {
         (a, b) => a.timestamp - b.timestamp
       );
 
+      // Expect chronological monthlySeries
       if (!monthlySeries.length) {
-        const fallbackValue = categoryDistributionMap.get(key) ?? null;
-        return { key, label, percentChange: null, currentValue: fallbackValue, deltaValue: null };
+        const currentValue = categoryDistributionMap.get(key) ?? null;
+        return { key, label, percentChange: null, currentValue, deltaValue: null };
       }
 
       const currentMonth = monthlySeries[monthlySeries.length - 1];
@@ -511,9 +594,16 @@ const DashboardPage: React.FC = () => {
       let percentChange: number | null = null;
       let deltaValue: number | null = null;
       if (previousMonth) {
-        deltaValue = currentMonth.value - previousMonth.value;
-        if (previousMonth.value !== 0) {
-          percentChange = (deltaValue / previousMonth.value) * 100;
+        const currentKey = `${key}-${currentMonth.year}-${currentMonth.month}`;
+        const previousKey = `${key}-${previousMonth.year}-${previousMonth.month}`;
+        const currentNet = transactionNetByCategoryMonth.get(currentKey) ?? 0;
+        const previousNet = transactionNetByCategoryMonth.get(previousKey) ?? 0;
+
+        const adjustedCurrent = currentMonth.value - currentNet;
+        const adjustedPrevious = previousMonth.value - previousNet;
+        deltaValue = adjustedCurrent - adjustedPrevious;
+        if (adjustedPrevious !== 0) {
+          percentChange = (deltaValue / adjustedPrevious) * 100;
         }
       }
 
@@ -522,7 +612,7 @@ const DashboardPage: React.FC = () => {
 
       return { key, label, percentChange, currentValue, deltaValue };
     });
-  }, [categoryControlMap, categoryDistributionMap]);
+  }, [categoryControlMap, categoryDistributionMap, transactionNetByCategoryMonth]);
 
   return (
     <Container maxWidth="xl" sx={{ py: 3, position: 'relative' }}>
